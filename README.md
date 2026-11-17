@@ -1,19 +1,48 @@
 **English** | [Русский](README.ru.md) | [Français](README.fr.md)
 
-# Blazor WebAssembly minification on .NET 11
+# Blazor WebAssembly minification on .NET 11: how to reduce app size
 
-**Live demo** (GitHub Pages, gzip only): [home](https://toloymak.github.io/blazor-min-poc/) ·
-[`Honest` app](https://toloymak.github.io/blazor-min-poc/honest/) · [`Extreme` app](https://toloymak.github.io/blazor-min-poc/extreme/) ·
-[detailed report](https://toloymak.github.io/blazor-min-poc/report.html). Source: [github.com/Toloymak/blazor-min-poc](https://github.com/Toloymak/blazor-min-poc).
-
-The result of this project is a measured list of ways to reduce the download size of a Blazor WebAssembly (Blazor WASM) app
-on .NET 11 with the stock runtime. Each way comes with its saving in bytes.
+How to reduce the size of a Blazor WebAssembly (Blazor WASM) app on .NET 11: a measured list of settings and build steps,
+each with the bytes it saves in the download (bundle size in brotli and gzip). Everything uses the stock runtime.
 The list covers IL trimming with ILLink, feature switches such as `InvariantGlobalization`,
 the native relink with the `wasm-tools` workload, Bit.Minifier, `wasm-opt`, terser and a single bundle for all assemblies.
 Every size is given as raw bytes, brotli and gzip, so you see the real bundle size that a browser downloads.
 
 The same 3-page app (Home, Counter, Fetch) was built and measured in more than 160 configurations (161 experiment runs).
 Two final variants are kept: `Honest` and `Extreme`.
+
+**Live demo** (GitHub Pages, gzip only): [home](https://toloymak.github.io/blazor-min-poc/) ·
+[`Honest` app](https://toloymak.github.io/blazor-min-poc/honest/) · [`Extreme` app](https://toloymak.github.io/blazor-min-poc/extreme/) ·
+[detailed report](https://toloymak.github.io/blazor-min-poc/report.html). Source: [github.com/Toloymak/blazor-min-poc](https://github.com/Toloymak/blazor-min-poc).
+
+## Quick start: reduce Blazor WASM bundle size
+
+These are the changes with the biggest measured saving that `Honest` uses, in the order to apply them.
+Savings are in brotli bytes, from the lever table below.
+
+1. Install the `wasm-tools` workload, so `dotnet publish` relinks the native runtime: about 800k to 850k together with the settings that need it.
+2. `InvariantGlobalization=true`: 657,823.
+3. `InvariantTimezone=true` and `BlazorEnableTimeZoneSupport=false`: 64,384.
+4. `EventSourceSupport=false`: 98,849.
+5. `MetricsSupport=false`: 50,418.
+
+```bash
+dotnet workload install wasm-tools
+```
+
+```xml
+<PropertyGroup>
+  <InvariantGlobalization>true</InvariantGlobalization>
+  <InvariantTimezone>true</InvariantTimezone>
+  <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+  <EventSourceSupport>false</EventSourceSupport>
+  <MetricsSupport>false</MetricsSupport>
+</PropertyGroup>
+```
+
+Each setting gives something up: for example, invariant globalization removes culture data, and the time zone switches leave only UTC.
+The costs of every setting are listed in [step 2](#2-trimming-and-feature-switch-settings-that-save-the-most).
+The full list, with post-processing and code changes, is in the next sections.
 
 ## How small can a Blazor WebAssembly app get on .NET 11?
 
@@ -55,7 +84,7 @@ The issue #86601 row is a public recipe from dotnet/runtime, measured here on .N
 - [How to get these numbers yourself](#how-to-get-these-numbers-yourself)
 - [What Extreme gives up](#what-extreme-gives-up)
 - [What stops a Blazor WebAssembly app from getting smaller](#what-stops-a-blazor-webassembly-app-from-getting-smaller)
-- [FAQ: Blazor WebAssembly size](#faq-blazor-webassembly-size)
+- [FAQ: Blazor WebAssembly size](#faq-blazor-wasm-app-size-and-bundle-size)
 - [Repository layout](#repository-layout)
 - [Full log and report page](#full-log-and-report-page)
 
@@ -97,7 +126,7 @@ Without the relink the best results were `Honest` 2,320,504 and `Extreme` 2,186,
 With it, the round-1 finals were 1,519,331 and 1,333,578: about 800k to 850k smaller.
 
 ```bash
-DOTNET_ROOT=$HOME/.dotnet-wasm PATH=$HOME/.dotnet-wasm:$PATH dotnet workload install wasm-tools
+dotnet workload install wasm-tools
 ```
 
 On Linux the relink also needs `libatomic1` (the node inside the workload uses it):
@@ -486,7 +515,7 @@ Native part: about 22–27K brotli less with different build flags on stock sour
 about 60–95K with deep changes. With JS and CoreLib included: about 95–160K (small patches) to about 140–250K (deep changes).
 The cost: an own runtime pack that must be rebuilt on every monthly servicing release, late security fixes, and no vendor support.
 
-## FAQ: Blazor WebAssembly size
+## FAQ: Blazor WASM app size and bundle size
 
 **How small can a Blazor WebAssembly app get on .NET 11?**
 In this project, 1,211,018 bytes brotli for `Extreme` (8 files) and 1,424,673 for `Honest` with stock Blazor APIs.
@@ -519,6 +548,35 @@ a separate CSS file (517 and 528), measured with `tools/css-cost.mjs`.
 
 **Is CoreCLR on wasm smaller than Mono?**
 No. `UseMonoRuntime=false` works, but it is +422,347 brotli bigger than Mono.
+
+**How big is a Blazor WASM app?**
+The `dotnet new blazorwasm` template downloads 2,589,350 bytes with brotli (8,447,649 raw, 50 files).
+With the changes in this README, `Honest` downloads 1,424,673 and `Extreme` 1,211,018 (recipe finals, before page styles).
+
+**Why is my Blazor WASM app so big?**
+In the final `Extreme` build the bytes are: managed code 752,074 (CoreLib and System.Text.Json are the biggest parts),
+the native runtime `dotnet.native.wasm` 359,489, and JS 98,729. In the template, culture data and unused runtime code add much more:
+`InvariantGlobalization` alone removes 657,823, and the native relink removes unused native code. See the lever table above.
+
+**How do I reduce dotnet.native.wasm size?**
+Install the `wasm-tools` workload, so the native relink drops unused native code (36,377 on the template) and lets
+`InvariantGlobalization` remove ICU from the native file. After publish, `wasm-opt -Oz` saved 18,608, `-tnh --gufa` 1,509,
+and native function stubs 23,337 (step 3). In the final `Extreme` build `dotnet.native.wasm` is 359,489 brotli.
+
+**Does AOT make a Blazor WebAssembly app bigger?**
+Not measured here. Every build in this repo runs without AOT compilation: no app project file sets `RunAOTCompilation`.
+The native stubs in `Extreme` even remove the AOT lookup functions, so `Extreme` cannot use AOT-compiled assemblies.
+
+**Does a smaller download make Blazor WASM load faster?**
+This repo measures bytes, not load time. The only claim here is that the browser has fewer bytes to download.
+
+**Does this repo use lazy loading of assemblies?**
+No. `Extreme` packs all 32 assemblies into one bundle file, and the browser downloads all assemblies before start.
+It also has no lazy-loaded assemblies by route, because it has no `@page` routing. `Honest` does not use lazy loading either.
+Lazy loading was not measured here. Microsoft describes it in [Lazy load assemblies in ASP.NET Core Blazor WebAssembly](https://learn.microsoft.com/aspnet/core/blazor/webassembly-lazy-load-assemblies).
+
+**Was this measured on .NET 8, 9 or 10?**
+No. Everything here was measured on .NET 11 only (SDK 11.0.100). Other versions were not tested.
 
 ## Repository layout
 

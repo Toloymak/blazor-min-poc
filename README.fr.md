@@ -1,19 +1,48 @@
 [English](README.md) | [Русский](README.ru.md) | **Français**
 
-# Minification de Blazor WebAssembly sous .NET 11
+# Minification de Blazor WebAssembly sous .NET 11 : comment réduire la taille de l'application
 
-**Démo en ligne** (GitHub Pages, gzip uniquement) : [accueil](https://toloymak.github.io/blazor-min-poc/) ·
-[application `Honest`](https://toloymak.github.io/blazor-min-poc/honest/) · [application `Extreme`](https://toloymak.github.io/blazor-min-poc/extreme/) ·
-[rapport détaillé](https://toloymak.github.io/blazor-min-poc/report.html). Code source : [github.com/Toloymak/blazor-min-poc](https://github.com/Toloymak/blazor-min-poc).
-
-Le résultat de ce projet est une liste mesurée de moyens de réduire la taille de téléchargement d'une application Blazor WebAssembly (Blazor WASM)
-sous .NET 11 avec le runtime standard. Chaque moyen est donné avec son gain en octets.
+Comment réduire la taille d'une application Blazor WebAssembly (Blazor WASM) sous .NET 11 : une liste mesurée de réglages et d'étapes de build,
+avec pour chacun les octets gagnés au téléchargement (taille du bundle en brotli et en gzip). Tout utilise le runtime standard.
 La liste couvre le trimming IL avec ILLink, les feature switches comme `InvariantGlobalization`,
 le relink natif avec le workload `wasm-tools`, Bit.Minifier, `wasm-opt`, terser et un bundle unique pour tous les assemblys.
 Chaque taille est donnée en octets bruts, en brotli et en gzip : vous voyez la vraie taille du bundle que le navigateur télécharge.
 
 La même application de 3 pages (Home, Counter, Fetch) a été construite et mesurée dans plus de 160 configurations (161 exécutions d'expérience).
 Deux variantes finales sont conservées : `Honest` et `Extreme`.
+
+**Démo en ligne** (GitHub Pages, gzip uniquement) : [accueil](https://toloymak.github.io/blazor-min-poc/) ·
+[application `Honest`](https://toloymak.github.io/blazor-min-poc/honest/) · [application `Extreme`](https://toloymak.github.io/blazor-min-poc/extreme/) ·
+[rapport détaillé](https://toloymak.github.io/blazor-min-poc/report.html). Code source : [github.com/Toloymak/blazor-min-poc](https://github.com/Toloymak/blazor-min-poc).
+
+## Démarrage rapide pour réduire la taille du bundle Blazor WASM
+
+Voici les changements au plus gros gain mesuré qu'utilise `Honest`, dans l'ordre où les appliquer.
+Les gains sont en octets brotli, tirés du tableau des moyens plus bas.
+
+1. Installez le workload `wasm-tools`, pour que `dotnet publish` refasse le relink natif du runtime : environ 800k à 850k avec les réglages qui en ont besoin.
+2. `InvariantGlobalization=true` : 657 823.
+3. `InvariantTimezone=true` et `BlazorEnableTimeZoneSupport=false` : 64 384.
+4. `EventSourceSupport=false` : 98 849.
+5. `MetricsSupport=false` : 50 418.
+
+```bash
+dotnet workload install wasm-tools
+```
+
+```xml
+<PropertyGroup>
+  <InvariantGlobalization>true</InvariantGlobalization>
+  <InvariantTimezone>true</InvariantTimezone>
+  <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+  <EventSourceSupport>false</EventSourceSupport>
+  <MetricsSupport>false</MetricsSupport>
+</PropertyGroup>
+```
+
+Chaque réglage sacrifie quelque chose : par exemple, la globalisation invariante retire les données de culture, et les réglages de fuseau horaire ne laissent que l'UTC.
+Le coût de chaque réglage est décrit à l'[étape 2](#2-les-réglages-de-trimming-et-de-feature-switches-qui-économisent-le-plus).
+La liste complète, avec le post-traitement et les modifications de code, se trouve dans les sections suivantes.
 
 ## Taille minimale d'une application Blazor WebAssembly sous .NET 11
 
@@ -55,7 +84,7 @@ La ligne de l'issue #86601 est une recette publique de dotnet/runtime, mesurée 
 - [Comment obtenir ces chiffres vous-même](#comment-obtenir-ces-chiffres-vous-même)
 - [Ce que sacrifie Extreme](#ce-que-sacrifie-extreme)
 - [Ce qui empêche une application Blazor WebAssembly de devenir plus petite](#ce-qui-empêche-une-application-blazor-webassembly-de-devenir-plus-petite)
-- [FAQ sur la taille de Blazor WebAssembly](#faq-sur-la-taille-de-blazor-webassembly)
+- [FAQ sur la taille de Blazor WebAssembly](#faq-sur-la-taille-de-lapplication-et-du-bundle-blazor-wasm)
 - [Structure du dépôt](#structure-du-dépôt)
 - [Journal complet et page de rapport](#journal-complet-et-page-de-rapport)
 
@@ -97,7 +126,7 @@ Sans relink, les meilleurs résultats étaient `Honest` 2 320 504 et `Extreme`
 Avec lui, les finales du tour 1 pesaient 1 519 331 et 1 333 578 : environ 800k à 850k de moins.
 
 ```bash
-DOTNET_ROOT=$HOME/.dotnet-wasm PATH=$HOME/.dotnet-wasm:$PATH dotnet workload install wasm-tools
+dotnet workload install wasm-tools
 ```
 
 Sous Linux, le relink a aussi besoin de `libatomic1` (le node fourni dans le workload l'utilise) :
@@ -486,7 +515,7 @@ Partie native : environ 22–27K de moins en brotli avec d'autres options de bui
 environ 60–95K avec des changements profonds. En incluant le JS et CoreLib : d'environ 95–160K (petits patchs) à environ 140–250K (changements profonds).
 Le coût : un pack de runtime à soi, à reconstruire à chaque version de maintenance mensuelle, des correctifs de sécurité en retard et aucun support de l'éditeur.
 
-## FAQ sur la taille de Blazor WebAssembly
+## FAQ sur la taille de l'application et du bundle Blazor WASM
 
 **Jusqu'où peut-on réduire une application Blazor WebAssembly sous .NET 11 ?**
 Dans ce projet, 1 211 018 octets en brotli pour `Extreme` (8 fichiers) et 1 424 673 pour `Honest` avec les API Blazor standard.
@@ -519,6 +548,35 @@ qu'un fichier CSS séparé (517 et 528), mesuré avec `tools/css-cost.mjs`.
 
 **CoreCLR sur wasm est-il plus petit que Mono ?**
 Non. `UseMonoRuntime=false` fonctionne, mais pèse +422 347 de plus en brotli que Mono.
+
+**Quelle est la taille d'une application Blazor WASM ?**
+Le modèle `dotnet new blazorwasm` télécharge 2 589 350 octets en brotli (8 447 649 en brut, 50 fichiers).
+Avec les changements de ce README, `Honest` télécharge 1 424 673 et `Extreme` 1 211 018 (finales de la recette, avant les styles de page).
+
+**Pourquoi mon application Blazor WASM est-elle si grosse ?**
+Dans le build final `Extreme`, les octets se répartissent ainsi : code managé 752 074 (CoreLib et System.Text.Json en sont les plus grosses parties),
+le runtime natif `dotnet.native.wasm` 359 489 et le JS 98 729. Dans le modèle, les données de culture et le code inutilisé du runtime pèsent beaucoup plus :
+`InvariantGlobalization` retire à elle seule 657 823, et le relink natif retire le code natif inutilisé. Voir le tableau des moyens plus haut.
+
+**Comment réduire la taille de dotnet.native.wasm ?**
+Installez le workload `wasm-tools` : le relink natif retire le code natif inutilisé (36 377 sur le modèle) et permet à
+`InvariantGlobalization` de retirer ICU du fichier natif. Après la publication, `wasm-opt -Oz` a fait gagner 18 608, `-tnh --gufa` 1 509,
+et les stubs de fonctions natives 23 337 (étape 3). Dans le build final `Extreme`, `dotnet.native.wasm` pèse 359 489 en brotli.
+
+**L'AOT rend-il une application Blazor WebAssembly plus grosse ?**
+Non mesuré ici. Tous les builds de ce dépôt tournent sans compilation AOT : aucun fichier projet d'application ne définit `RunAOTCompilation`.
+Les stubs natifs d'`Extreme` retirent même les fonctions de recherche AOT : `Extreme` ne peut donc pas utiliser d'assemblys compilés en AOT.
+
+**Un téléchargement plus petit rend-il Blazor WASM plus rapide à charger ?**
+Ce dépôt mesure des octets, pas un temps de chargement. La seule affirmation ici est que le navigateur a moins d'octets à télécharger.
+
+**Ce dépôt utilise-t-il le chargement différé des assemblys ?**
+Non. `Extreme` regroupe les 32 assemblys dans un seul fichier bundle, et le navigateur télécharge tous les assemblys avant le démarrage.
+Il n'a pas non plus de chargement différé d'assemblys par route, car il n'a pas de routage `@page`. `Honest` n'utilise pas non plus le chargement différé.
+Le chargement différé n'a pas été mesuré ici. Microsoft le décrit dans [Lazy load assemblies in ASP.NET Core Blazor WebAssembly](https://learn.microsoft.com/aspnet/core/blazor/webassembly-lazy-load-assemblies).
+
+**Cela a-t-il été mesuré sur .NET 8, 9 ou 10 ?**
+Non. Tout ici a été mesuré uniquement sur .NET 11 (SDK 11.0.100). Les autres versions n'ont pas été testées.
 
 ## Structure du dépôt
 
