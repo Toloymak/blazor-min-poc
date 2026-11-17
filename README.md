@@ -1,4 +1,4 @@
-**English** | [Русский](README.ru.md)
+**English** | [Русский](README.ru.md) | [Français](README.fr.md)
 
 # Blazor WebAssembly minification on .NET 11
 
@@ -15,6 +15,25 @@ Every size is given as raw bytes, brotli and gzip, so you see the real bundle si
 The same 3-page app (Home, Counter, Fetch) was built and measured in more than 160 configurations (161 logged runs).
 Two final variants are kept: `Honest` and `Extreme`.
 
+## How small can a Blazor WebAssembly app get on .NET 11?
+
+The `dotnet new blazorwasm` template downloads **2,589,350** bytes with brotli.
+`Honest`, which keeps stock Blazor APIs, downloads **1,424,673** bytes: 1,164,677 fewer, 45.0% smaller.
+`Extreme` downloads **1,211,018** bytes: 1,378,332 fewer, 53.2% smaller.
+
+| Build | Raw bytes | Brotli | gzip -9 | Files | vs template (brotli) |
+|---|---:|---:|---:|---:|---:|
+| Template baseline (`dotnet new blazorwasm`) | 8,447,649 | 2,589,350 | — | 50 | — |
+| Issue #86601 recipe on .NET 11 | 5,404,848 | 1,735,678 | 2,091,866 | 43 | −853,672 |
+| `Honest`, round 1 | 4,616,080 | 1,519,331 | 1,823,357 | 43 | −1,070,019 |
+| `Extreme`, round 1 | 4,013,671 | 1,333,578 | 1,599,659 | 39 | −1,255,772 |
+| **`Honest`, final** | **4,243,612** | **1,424,673** | **1,706,941** | 43 | **−1,164,677** |
+| `Honest` + bundle (experiment, not the default) | 4,240,357 | 1,344,434 | 1,675,892 | 8 | −1,244,916 |
+| **`Extreme`, final** | **3,851,361** | **1,211,018** | **1,507,342** | 8 | **−1,378,332** |
+
+The issue #86601 row is a public recipe from dotnet/runtime, measured here on .NET 11.
+"—" means not measured or not needed.
+
 **Contents**
 
 - [How to reduce Blazor WebAssembly download size](#how-to-reduce-blazor-webassembly-download-size)
@@ -25,7 +44,6 @@ Two final variants are kept: `Honest` and `Extreme`.
   - [5. Serve brotli files compressed ahead of time](#5-serve-brotli-files-compressed-ahead-of-time-brotli-vs-gzip)
   - [Settings that did nothing](#settings-that-did-nothing)
   - [Settings that broke the app or the build](#settings-that-broke-the-app-or-the-build)
-- [How small can a Blazor WebAssembly app get on .NET 11?](#how-small-can-a-blazor-webassembly-app-get-on-net-11)
 - [Two final variants: Honest and Extreme](#two-final-variants-honest-and-extreme)
 - [How the download size was measured](#how-the-download-size-was-measured)
 - [How to get these numbers yourself](#how-to-get-these-numbers-yourself)
@@ -257,25 +275,6 @@ Worked, but worse:
 | `UseMonoRuntime=false` (CoreCLR on wasm) | +422,347 | Works, but much bigger than Mono (`c-honest-coreclr`). |
 | `WasmRunWasmOpt=false` | +1,395,714 | Without the SDK pass the native file keeps names and debug data (`r2-n-norunopt`). |
 | Bundle including `dotnet.native.wasm` | −79,082 | 4k smaller than the kept bundle, but no streaming compile: first render 381 ms (`r2-b-group-wasm`). |
-
-## How small can a Blazor WebAssembly app get on .NET 11?
-
-The `dotnet new blazorwasm` template downloads **2,589,350** bytes with brotli.
-`Honest`, which keeps stock Blazor APIs, downloads **1,424,673** bytes: 1,164,677 fewer, 45.0% smaller.
-`Extreme` downloads **1,211,018** bytes: 1,378,332 fewer, 53.2% smaller.
-
-| Build | Raw bytes | Brotli | gzip -9 | Files | vs template (brotli) |
-|---|---:|---:|---:|---:|---:|
-| Template baseline (`dotnet new blazorwasm`) | 8,447,649 | 2,589,350 | — | 50 | — |
-| Issue #86601 recipe on .NET 11 | 5,404,848 | 1,735,678 | 2,091,866 | 43 | −853,672 |
-| `Honest`, round 1 | 4,616,080 | 1,519,331 | 1,823,357 | 43 | −1,070,019 |
-| `Extreme`, round 1 | 4,013,671 | 1,333,578 | 1,599,659 | 39 | −1,255,772 |
-| **`Honest`, final** | **4,243,612** | **1,424,673** | **1,706,941** | 43 | **−1,164,677** |
-| `Honest` + bundle (experiment, not the default) | 4,240,357 | 1,344,434 | 1,675,892 | 8 | −1,244,916 |
-| **`Extreme`, final** | **3,851,361** | **1,211,018** | **1,507,342** | 8 | **−1,378,332** |
-
-The issue #86601 row is a public recipe from dotnet/runtime, measured here on .NET 11.
-"—" means not measured or not needed.
 
 ## Two final variants: Honest and Extreme
 
@@ -526,6 +525,7 @@ No. `UseMonoRuntime=false` works, but it is +422,347 brotli bigger than Mono.
 | `tools/collect.mjs`, `tools/result.mjs` | Write measured runs into `results/experiments.jsonl`. |
 | `tools/assemble-site.mjs`, `tools/pages-deeplink.mjs`, `tools/final.sh` | Build the demo site and check it under a sub-path. |
 | `tools/build-report.mjs` | The detailed report page, made from the log. |
+| `tools/levers.mjs` | The shared list of the 14 ways shown on the landing page and the report page; it reads the numbers from the log. |
 | `tools/AsmSize/`, `tools/why.py`, `tools/grep-props.sh`, `tools/native-symbols.sh`, `tools/native-stub-estimate.sh` | Analysis tools (IL size, why ILLink kept a type, which properties the SDK reads, native function sizes). |
 | `RESULTS.md` | The full written log of both rounds. |
 | `results/` | `experiments.jsonl` (one line per run). The small `meta-*.json` inputs it was made from, the per-run trace folders (`runs/<id>/`) and the named native analysis build (`native-symbols/`) are kept locally, not published. |
