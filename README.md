@@ -6,54 +6,276 @@
 [`Honest` app](https://toloymak.github.io/blazor-min-poc/honest/) · [`Extreme` app](https://toloymak.github.io/blazor-min-poc/extreme/) ·
 [detailed report](https://toloymak.github.io/blazor-min-poc/report.html). Source: [github.com/Toloymak/blazor-min-poc](https://github.com/Toloymak/blazor-min-poc).
 
-This project shows how to reduce the download size of a Blazor WebAssembly (Blazor WASM) app on .NET 11 with the stock runtime.
-It measures each step on its own: IL trimming with ILLink, feature switches such as `InvariantGlobalization`,
+The result of this project is a measured list of ways to reduce the download size of a Blazor WebAssembly (Blazor WASM) app
+on .NET 11 with the stock runtime. Each way comes with its saving in bytes.
+The list covers IL trimming with ILLink, feature switches such as `InvariantGlobalization`,
 the native relink with the `wasm-tools` workload, Bit.Minifier, `wasm-opt`, terser and a single bundle for all assemblies.
 Every size is given as raw bytes, brotli and gzip, so you see the real bundle size that a browser downloads.
 
 The same 3-page app (Home, Counter, Fetch) was built and measured in more than 160 configurations (161 logged runs).
 Two final variants are kept: `Honest` and `Extreme`.
-The goal set by the owner was **1,100,000 bytes** with brotli compression.
 
-## How small can a Blazor WebAssembly app get on .NET 11?
+**Contents**
 
-**The target is not reached.** The smallest build (`Extreme`) is **1,211,018** bytes brotli: **+111,018** over the target.
-The build that keeps stock Blazor APIs (`Honest`) is **1,424,673** bytes: +324,673 over.
-
-| Build | Raw bytes | Brotli | gzip -9 | Files | Over target (brotli − 1,100,000) |
-|---|---:|---:|---:|---:|---:|
-| Template baseline (`dotnet new blazorwasm`) | 8,447,649 | 2,589,350 | — | 50 | +1,489,350 |
-| Issue #86601 recipe on .NET 11 | 5,404,848 | 1,735,678 | 2,091,866 | 43 | +635,678 |
-| `Honest`, round 1 | 4,616,080 | 1,519,331 | 1,823,357 | 43 | +419,331 |
-| `Extreme`, round 1 | 4,013,671 | 1,333,578 | 1,599,659 | 39 | +233,578 |
-| **`Honest`, final** | **4,243,612** | **1,424,673** | **1,706,941** | 43 | **+324,673** |
-| `Honest` + bundle (experiment, not the default) | 4,240,357 | 1,344,434 | 1,675,892 | 8 | +244,434 |
-| **`Extreme`, final** | **3,851,361** | **1,211,018** | **1,507,342** | 8 | **+111,018** |
-| Target | | 1,100,000 | | | |
-
-Compared with the template, `Honest` downloads 1,164,677 fewer brotli bytes and `Extreme` 1,378,332 fewer.
-"—" means the value was not measured.
-
-## Contents
-
+- [How to reduce Blazor WebAssembly download size](#how-to-reduce-blazor-webassembly-download-size)
+  - [1. Install the `wasm-tools` workload and use the native relink](#1-install-the-wasm-tools-workload-and-use-the-native-relink)
+  - [2. Trimming and feature-switch settings that save the most](#2-trimming-and-feature-switch-settings-that-save-the-most)
+  - [3. Post-processing after publish](#3-post-processing-after-publish-bundle-wasm-opt-terser-native-stubs)
+  - [4. Code changes that `Extreme` makes](#4-code-changes-that-extreme-makes)
+  - [5. Serve brotli files compressed ahead of time](#5-serve-brotli-files-compressed-ahead-of-time-brotli-vs-gzip)
+  - [Settings that did nothing](#settings-that-did-nothing)
+  - [Settings that broke the app or the build](#settings-that-broke-the-app-or-the-build)
 - [How small can a Blazor WebAssembly app get on .NET 11?](#how-small-can-a-blazor-webassembly-app-get-on-net-11)
 - [Two final variants: Honest and Extreme](#two-final-variants-honest-and-extreme)
 - [How the download size was measured](#how-the-download-size-was-measured)
-- [Blazor WASM brotli vs gzip size: what you download on the demo site](#blazor-wasm-brotli-vs-gzip-size-what-you-download-on-the-demo-site)
 - [How to get these numbers yourself](#how-to-get-these-numbers-yourself)
-- [How to reduce Blazor WebAssembly download size in your own app](#how-to-reduce-blazor-webassembly-download-size-in-your-own-app)
-  - [Which trimming and feature-switch settings save the most](#which-trimming-and-feature-switch-settings-save-the-most)
-  - [Post-processing: bundle, wasm-opt, terser, native stubs](#post-processing-bundle-wasm-opt-terser-native-stubs)
-  - [Code changes (what Extreme adds)](#code-changes-what-extreme-adds)
-  - [Settings that did nothing](#settings-that-did-nothing)
-  - [Settings that broke the app or the build](#settings-that-broke-the-app-or-the-build)
 - [What Extreme gives up](#what-extreme-gives-up)
-- [Why the app is not under 1.1 MB](#why-the-app-is-not-under-11-mb)
+- [What stops a Blazor WebAssembly app from getting smaller](#what-stops-a-blazor-webassembly-app-from-getting-smaller)
 - [FAQ: Blazor WebAssembly size](#faq-blazor-webassembly-size)
 - [Repository layout](#repository-layout)
-- [Hosting on GitHub Pages](#hosting-on-github-pages)
-- [Hosting on Azure App Service (brotli)](#hosting-on-azure-app-service-brotli)
 - [Full log and report page](#full-log-and-report-page)
+
+## How to reduce Blazor WebAssembly download size
+
+The biggest measured savings, in brotli bytes. Each saving was measured alone or as one step on top of earlier steps
+(the linked section names the base run), so the savings do not add up exactly.
+
+| Way to reduce the download | Brotli saved | Details |
+|---|---:|---|
+| Native relink with the `wasm-tools` workload, plus the settings that need it | about 800k to 850k | [Step 1](#1-install-the-wasm-tools-workload-and-use-the-native-relink) |
+| `InvariantGlobalization=true` | 657,823 | [Step 2](#2-trimming-and-feature-switch-settings-that-save-the-most) |
+| `Extreme` code changes: own router, HTTP through JS `fetch` | 137,828 | [Step 4](#4-code-changes-that-extreme-makes) |
+| `EventSourceSupport=false` | 98,849 | [Step 2](#2-trimming-and-feature-switch-settings-that-save-the-most) |
+| Bit.Minifier | 91,369 | [Step 2](#2-trimming-and-feature-switch-settings-that-save-the-most) |
+| One bundle file for all assemblies | 75,030 | [Step 3](#3-post-processing-after-publish-bundle-wasm-opt-terser-native-stubs) |
+| `InvariantTimezone=true`, `BlazorEnableTimeZoneSupport=false` | 64,384 | [Step 2](#2-trimming-and-feature-switch-settings-that-save-the-most) |
+| `MetricsSupport=false` | 50,418 | [Step 2](#2-trimming-and-feature-switch-settings-that-save-the-most) |
+| `DynamicCodeSupport=false` | 30,502 | [Step 2](#2-trimming-and-feature-switch-settings-that-save-the-most) |
+| `WasmEnableSIMD=false` | 27,385 | [Step 2](#2-trimming-and-feature-switch-settings-that-save-the-most) |
+| Native function stubs | 23,337 | [Step 3](#3-post-processing-after-publish-bundle-wasm-opt-terser-native-stubs) |
+| terser on the JS files | 21,916 | [Step 3](#3-post-processing-after-publish-bundle-wasm-opt-terser-native-stubs) |
+| Mono.Cecil metadata pass | 20,134 | [Step 3](#3-post-processing-after-publish-bundle-wasm-opt-terser-native-stubs) |
+| `wasm-opt -Oz` | 18,608 | [Step 3](#3-post-processing-after-publish-bundle-wasm-opt-terser-native-stubs) |
+
+Each row's cost (what it breaks or makes slower) is in the linked section.
+
+All numbers are measured brotli deltas from [`results/experiments.jsonl`](results/experiments.jsonl).
+"Run" is the id of the measurement in that file. Unless a row says otherwise, a delta is one setting alone on the default
+`Honest` app (run `h00-default`, 2,563,523 brotli).
+
+### 1. Install the `wasm-tools` workload and use the native relink
+
+With the `wasm-tools` workload, `dotnet publish` relinks `dotnet.native.wasm` for your app.
+The relink alone saves 36,377 on the template (`baseline-norelink` vs `baseline`).
+More important, several big settings work only with it: without the relink, `InvariantGlobalization`, `InvariantTimezone`
+and `WasmEnableSIMD=false` stop the build (`WasmBuildNative is required ...`), and `EmccLinkOptimizationFlag` is silently ignored.
+Without the relink the best results were `Honest` 2,320,504 and `Extreme` 2,186,970 brotli.
+With it, the round-1 finals were 1,519,331 and 1,333,578: about 800k to 850k smaller.
+
+```bash
+DOTNET_ROOT=$HOME/.dotnet-wasm PATH=$HOME/.dotnet-wasm:$PATH dotnet workload install wasm-tools
+```
+
+On Linux the relink also needs `libatomic1` (the node inside the workload uses it):
+
+```bash
+sudo apt-get update && sudo apt-get install -y libatomic1
+```
+
+The full setup (SDK, workload, node tools) is in [How to get these numbers yourself](#how-to-get-these-numbers-yourself).
+
+### 2. Trimming and feature-switch settings that save the most
+
+These are the safe settings that `Honest` uses. The kept MSBuild properties are in [`Directory.Build.props`](Directory.Build.props) (`SizeProfile=final`).
+
+| Setting | Δ brotli | Run | Cost or note |
+|---|---:|---|---|
+| `InvariantGlobalization=true` | −657,823 | `s-invglob` | Invariant culture only. Needs the relink (ICU leaves the native file). |
+| `EventSourceSupport=false` | −98,849 | `s-noeventsource` | No EventSource diagnostics. |
+| Bit.Minifier 11.0.0-pre-20 (`UseBitMinifier=true`) | −91,369 | `s-bitmin` | Build-time package; renames non-public framework names. |
+| `InvariantTimezone=true`, `BlazorEnableTimeZoneSupport=false` | −64,384 | `s-invtz` | UTC only. Needs the relink. |
+| `MetricsSupport=false` | −50,418 | `s-nometrics` | No metrics. |
+| `DynamicCodeSupport=false` | −30,502 | `c-honest-dyncode` (on top of the levers above) | DI and expression trees use slower reflection paths. |
+| `WasmEnableSIMD=false` | −27,385 | `s-nosimd` | Slower runtime. Needs the relink. |
+| `WasmEnableExceptionHandling=false` | −27,329 | `s-noeh` | Emscripten's JS-based fallback. Only −199 on top of SIMD off (`x-noeh`). |
+| `BitMinifyAggressive=true` | −17,176 | `c-honest-bitmin-aggr` (on top) | Public framework names are renamed too (harder to read logs). |
+| `EmccLinkOptimizationFlag=-Oz` | −7,598 | `s-linkOz` | Ignored without the relink. |
+| `HttpActivityPropagationSupport=false` | −6,477 | `s-nohttpactivity` | No HTTP activity propagation. |
+| `EmccExtraLDFlags=-sMALLOC=emmalloc` | −2,089 | `x-emmalloc` (on `Extreme`) | Smaller, simpler allocator. |
+| `TrimMode=full` + `TrimmerRootAssembly` for the app | −1,699 | `s-trimfull` | Without the root the app breaks (see below). |
+| `StackTraceSupport=false` | −432 | `s-nostacktrace` | No stack traces in exceptions. |
+| `TrimmerRemoveSymbols=true`, `DebugType=none`, `GenerateDocumentationFile=false` | −145 | `s-nosymbols` | No debug symbols. |
+| `WasmEnableWebcil=false` | +498 | `s-nowebcil` | Bigger alone, −278 in the full chain (`h24-nowebcil`), so kept. |
+| `WasmFingerprintDotnetJs=false`, `BlazorFingerprintBlazorJs=false` | +33 | `s-nofingerprint` | About zero (noise). |
+
+The native relink itself (the default with the workload) saves 36,377 on the template (`baseline-norelink` vs `baseline`).
+
+The same settings as a project-file block, taken from [`Directory.Build.props`](Directory.Build.props).
+In this repository Bit.Minifier is switched on by `UseBitMinifier` and `BitMinifierVersion`, which add the package reference shown at the end.
+`TrimMode=full` also needs the app assembly as a root, as in [`Honest/Honest.csproj`](Honest/Honest.csproj).
+
+```xml
+<PropertyGroup>
+  <!-- trimming -->
+  <TrimMode>full</TrimMode>
+  <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+  <DebugType>none</DebugType>
+  <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  <!-- feature switches -->
+  <InvariantGlobalization>true</InvariantGlobalization>
+  <InvariantTimezone>true</InvariantTimezone>
+  <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+  <EventSourceSupport>false</EventSourceSupport>
+  <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+  <MetricsSupport>false</MetricsSupport>
+  <StackTraceSupport>false</StackTraceSupport>
+  <DynamicCodeSupport>false</DynamicCodeSupport>
+  <!-- native relink (needs the wasm-tools workload) -->
+  <WasmEnableSIMD>false</WasmEnableSIMD>
+  <WasmEnableExceptionHandling>false</WasmEnableExceptionHandling>
+  <EmccLinkOptimizationFlag>-Oz</EmccLinkOptimizationFlag>
+  <EmccExtraLDFlags>-sMALLOC=emmalloc</EmccExtraLDFlags>
+  <!-- publish output -->
+  <WasmEnableWebcil>false</WasmEnableWebcil>
+  <WasmFingerprintDotnetJs>false</WasmFingerprintDotnetJs>
+  <BlazorFingerprintBlazorJs>false</BlazorFingerprintBlazorJs>
+  <!-- Bit.Minifier -->
+  <BitMinifyAggressive>true</BitMinifyAggressive>
+</PropertyGroup>
+<ItemGroup>
+  <TrimmerRootAssembly Include="$(AssemblyName)" />
+  <PackageReference Include="Bit.Minifier" Version="11.0.0-pre-20" PrivateAssets="all" />
+</ItemGroup>
+```
+
+### 3. Post-processing after publish: bundle, wasm-opt, terser, native stubs
+
+These steps run after `dotnet publish`. They are done by `build.sh` with the scripts in [`tools/`](tools). Measured on `Extreme`.
+
+| Step | Δ brotli | Run | Cost or note |
+|---|---:|---|---|
+| One bundle file for all 32 assemblies (`tools/bundle.mjs`) | −75,030 | `r2-base-br` → `r2-b-group` | One integrity value for all; no per-assembly caching. Also −32k under gzip. |
+| Native function stubs by name (`tools/wasmstub.mjs`) | −23,337 | `r2-x-names` → `f2-extreme` | Stubbed code traps if it ever runs (PDB/zlib, AOT lookups, interpreter SIMD, thread dump). |
+| terser on the JS files (round 1) | −21,916 | `e04-minify` | Files must be rebuilt with `build.sh` (integrity values are rewritten). |
+| Mono.Cecil metadata pass (`tools/MetaStrip`) | −20,134 | `r2-c1-slim-aggr` → `r2-m-props-notasks` | Reflection over compiler-only attributes, framework properties/events and consts finds nothing. |
+| `wasm-opt -Oz` on `dotnet.native.wasm` (round 1) | −18,608 | `e03-wasmopt` | |
+| Aggressive terser + smaller boot config | −2,572 | `r2-c1-slim-aggr` | |
+| `wasm-opt -tnh --gufa` | −1,509 | `r2-b-group` → `r2-n-tnh-gufa` | `-tnh` assumes traps never happen. |
+| `wasm-opt --converge` | −822 | `x-wasmopt-converge` | |
+
+`Honest` with the round-2 post-processing (no bundle, no code change) went from 1,519,331 to 1,424,673 (`f2-honest`, −94,658).
+
+There is no project setting for these steps. Run them the way [`build.sh`](build.sh) does: the Cecil pass, the native stubs,
+`wasm-opt` and terser are in [`tools/postprocess.mjs`](tools/postprocess.mjs) (it also writes the new integrity values),
+the bundle is [`tools/bundle.mjs`](tools/bundle.mjs). The list of stubbed native functions is `STUBS_DEFAULT` in `build.sh`.
+
+```bash
+./build.sh extreme
+```
+
+### 4. Code changes that `Extreme` makes
+
+| Change | Δ brotli | Run | Cost or note |
+|---|---:|---|---|
+| Own router + HTTP through JS `fetch` (no `HttpClient` or System.Text.Json in app code) | −137,828 | `e00-extreme` (vs `Honest` with the same settings) | No `@page` routing, no `HttpClient`. |
+| ILLink stubs: `Console.get_Error`, `JsonStreamConfigurationSource.Build` | −16,682 | `x-subst2a` | `Console.Error` is null; `appsettings.json` is ignored. |
+| ILLink stub: `DomainNameHelper.TryGetUnicodeEquivalent` | −2,645 | `x-subst2c` | Unicode (IDN) host names are not converted. |
+| ILLink stubs: `AddEnvironmentVariables`, culture provider checks | −2,034 | `x-subst` | Environment variables are not in `IConfiguration`. |
+
+The code is in [`Extreme/`](Extreme): the router in `App.razor`, the pages in `Pages/`, the ILLink stubs in `ILLink.Substitutions*.xml`,
+switched on in [`Extreme/Extreme.csproj`](Extreme/Extreme.csproj).
+
+### 5. Serve brotli files compressed ahead of time (brotli vs gzip)
+
+Brotli is about 20% smaller than gzip here: `Extreme` is 1,211,018 bytes with brotli and 1,507,342 with gzip,
+`Honest` is 1,424,673 and 1,706,941.
+
+`build.sh` compresses every file ahead of time with [`tools/compress.mjs`](tools/compress.mjs): a `.br` file
+(brotli quality 11, window 24) and a `.gz` file (gzip level 9) next to each file. The server must send the `.br` file
+with `Content-Encoding: br` when the browser accepts brotli. A server that compresses with gzip on the fly sends about the
+gzip column instead (its own gzip level may give a bit more). The live demo is served with gzip, so it shows the gzip size.
+
+To see it yourself in Chrome or Edge DevTools:
+
+1. Open the demo, press F12 and go to the **Network** tab.
+2. Turn on **Disable cache**.
+3. Reload the page. Then click Counter and Fetch.
+4. Read the status bar at the bottom: "**transferred**" is what went over the network, "**resources**" is the size after decompression.
+5. Compare "transferred" with the gzip column (a server that sends gzip) or the brotli column (a server that sends the `.br` files).
+   "Resources" should be close to the raw column.
+
+"Transferred" also counts HTTP headers, so it is a little higher than the sum of the files.
+On the live demo the site build also changes `index.html` a little (the `<base href>`, a small deep-link script
+and a robots meta tag), so expect a small difference there too.
+
+### Settings that did nothing
+
+About zero bytes each, so they were reverted.
+
+| Setting | Δ brotli | Run |
+|---|---:|---|
+| `DebuggerSupport=false` | +17 | `s-nodebugger` |
+| `UseSystemResourceKeys=true` | +52 | `s-sysreskeys` |
+| `MetadataUpdaterSupport=false` | +25 | `s-nometadataupd` |
+| `NullabilityInfoContextSupport=false` | −25 | `s-nonullability` |
+| `_AggressiveAttributeTrimming=true` | +4 | `s-aggrattr` |
+| `UseSizeOptimizedLinq=true` | +46 | `s-sizelinq` |
+| `Http3Support=false`, `UseNativeHttpHandler=true` | −57 | `s-nohttp3` |
+| `StartupHookSupport=false` | 0 | `x-startuphook` |
+| `WasmNativeStrip=true`, `WasmEmitSymbolMap=false`, `WasmEnableThreads=false` | 0 | `h23-strip` |
+| `SatelliteResourceLanguages=en` | 0 | `h19-satellite` |
+| `-sASSERTIONS=0 -sSTACK_OVERFLOW_CHECK=0` | 0 | `x-noassert` |
+| `WasmInitialHeapSize=16777216` | +295 | `x-heap` |
+| ILLink stubs for `AppContext.OnProcessExit`, `Environment.StackTrace` and three more | +86 | `r2-u-all` |
+| `Microsoft.Extensions.DependencyInjection.DisableDynamicEngine=true` | +13 | `r2-s-didynamic` |
+| `System.Globalization.PredefinedCulturesOnly=true` | +5 | `r2-s-cultures` |
+
+The stubbed code stays reachable from other roots, so the stubs change nothing.
+
+### Settings that broke the app or the build
+
+All of these were reverted.
+
+| Setting | What happened |
+|---|---|
+| `JsonSerializerIsReflectionEnabledByDefault=false` | JS interop breaks: `NoMetadataForType` in `DotNetDispatcher.ParseArguments` (`h11-jsonnoreflect`). |
+| `TrimMode=full` without rooting the app assembly | `CtorNotLocated, Honest.Layout.MainLayout` (`h01-trimfull-noroot`). |
+| ILLink `--ignore-descriptors true` | The app does not start (`x-ignoredesc`). |
+| `WasmBuildNative=false` with `InvariantGlobalization`, `InvariantTimezone` or `WasmEnableSIMD=false` | Build error: `WasmBuildNative is required ...`. |
+| `EmccExtraLDFlags=-sFILESYSTEM=0` | Build error: `-sFORCE_FILESYSTEM cannot be used with -sFILESYSTEM=0` (`x-nofs`). |
+| `EmccExtraLDFlags=--closure=1` | `google-closure-compiler was not found`; after installing it, a file is missing from the workload pack (`x-closure`, `x-closure2`). |
+| ILLink stub for the STJ `EnumConverter` | ILLink crash `IL1012` (`x-subst2b`). |
+| Cecil: property metadata removed in all of CoreLib | Mono assertion `object.c:146` (`r2-m-props`). |
+| All AOT runtime functions stubbed | `RuntimeError: unreachable` at startup (`r2-x-aot`). |
+| jiterpreter exports removed (`wasm-metadce`) | Check fails: the runtime JS needs the exports (`r2-n-jiterp-dce`). |
+| `UseMonoRuntime=false` with `WasmEnableExceptionHandling=false` | Build error: CoreCLR needs wasm exception handling (`h28-coreclr`). |
+
+Worked, but worse:
+
+| Setting | Δ brotli | Why reverted |
+|---|---:|---|
+| `UseMonoRuntime=false` (CoreCLR on wasm) | +422,347 | Works, but much bigger than Mono (`c-honest-coreclr`). |
+| `WasmRunWasmOpt=false` | +1,395,714 | Without the SDK pass the native file keeps names and debug data (`r2-n-norunopt`). |
+| Bundle including `dotnet.native.wasm` | −79,082 | 4k smaller than the kept bundle, but no streaming compile: first render 381 ms (`r2-b-group-wasm`). |
+
+## How small can a Blazor WebAssembly app get on .NET 11?
+
+The `dotnet new blazorwasm` template downloads **2,589,350** bytes with brotli.
+`Honest`, which keeps stock Blazor APIs, downloads **1,424,673** bytes: 1,164,677 fewer, 45.0% smaller.
+`Extreme` downloads **1,211,018** bytes: 1,378,332 fewer, 53.2% smaller.
+
+| Build | Raw bytes | Brotli | gzip -9 | Files | vs template (brotli) |
+|---|---:|---:|---:|---:|---:|
+| Template baseline (`dotnet new blazorwasm`) | 8,447,649 | 2,589,350 | — | 50 | — |
+| Issue #86601 recipe on .NET 11 | 5,404,848 | 1,735,678 | 2,091,866 | 43 | −853,672 |
+| `Honest`, round 1 | 4,616,080 | 1,519,331 | 1,823,357 | 43 | −1,070,019 |
+| `Extreme`, round 1 | 4,013,671 | 1,333,578 | 1,599,659 | 39 | −1,255,772 |
+| **`Honest`, final** | **4,243,612** | **1,424,673** | **1,706,941** | 43 | **−1,164,677** |
+| `Honest` + bundle (experiment, not the default) | 4,240,357 | 1,344,434 | 1,675,892 | 8 | −1,244,916 |
+| **`Extreme`, final** | **3,851,361** | **1,211,018** | **1,507,342** | 8 | **−1,378,332** |
+
+The issue #86601 row is a public recipe from dotnet/runtime, measured here on .NET 11.
+"—" means not measured or not needed.
 
 ## Two final variants: Honest and Extreme
 
@@ -69,7 +291,7 @@ Both apps have the same three pages: Home, Counter (a button that counts) and Fe
 
 The work had two rounds. Round 1 tried MSBuild properties, the relink and simple post-processing.
 Round 2 worked on `Extreme` only (`Honest` got the same post-processing, without the bundle and without code changes).
-The owner's limits in round 2: no fork or custom build of the runtime, and the stock Blazor host and renderer stay.
+Limits in round 2: no fork or custom build of the runtime, and the stock Blazor host and renderer stay.
 
 ## How the download size was measured
 
@@ -108,27 +330,6 @@ To prove that a trap is caught, run `r2-x-canary` stubs `mono_wasm_load_runtime`
 Every kept stub group also had to pass a stress page (`tools/stress/Stress.razor`), built only into a test copy of the app
 (`ExtremeStress`) and never shipped. It covers exceptions, try/finally, GC under load, number and date formatting and parsing,
 `Guid`, LINQ, `Dictionary`, strings, delegates, `Task.Delay` and a failed HTTP request (404). It needs 15 of 15.
-
-## Blazor WASM brotli vs gzip size: what you download on the demo site
-
-The numbers above are for brotli. What your browser really downloads depends on the host.
-
-- **GitHub Pages** compresses files with gzip itself and does not use the `.br` files. So the transfer there is close to the
-  **gzip** column: 1,507,342 for `Extreme`, 1,706,941 for `Honest` (Pages' own gzip level may give a bit more).
-- **A host that serves the `.br` files** (with `Content-Encoding: br`) gives the **brotli** column.
-
-To see it yourself in Chrome or Edge DevTools:
-
-1. Open the demo, press F12 and go to the **Network** tab.
-2. Turn on **Disable cache**.
-3. Reload the page. Then click Counter and Fetch.
-4. Read the status bar at the bottom: "**transferred**" is what went over the network, "**resources**" is the size after decompression.
-5. Compare "transferred" with the gzip column (GitHub Pages) or the brotli column (a host that serves `.br`).
-   "Resources" should be close to the raw column.
-
-"Transferred" also counts HTTP headers, so it is a little higher than the sum of the files.
-On GitHub Pages the site build also changes `index.html` a little (the `<base href>`, a small deep-link script
-and a robots meta tag), so expect a small difference there too.
 
 ## How to get these numbers yourself
 
@@ -186,12 +387,18 @@ The `COLD-LOAD` line should show:
 | `honest` | 43 | 4,243,612 | 1,424,673 | 1,706,941 |
 | `extreme` | 8 | 3,851,361 | 1,211,018 | 1,507,342 |
 
-**Note: a few bytes depend on the folder path.** The SDK puts a fingerprint into some file names
-(for example `dotnet.native.<fingerprint>.wasm`). It takes the fingerprint before the function-name section is stripped,
-and that section depends on the checkout path. The names are written into the boot config inside `dotnet.js`,
-so the brotli total moves by a few bytes. A clean copy at another path measured `Honest` 1,424,691 (+18) and `Extreme` 1,211,016 (−2).
-Raw totals and the sha256 of the final `dotnet.native.wasm` were the same in both copies.
-So expect numbers within a few tens of bytes of the ones above. This is true for the CI build too.
+**Note: the totals depend a little on where the build runs** (folder path and SDK location).
+The SDK puts a fingerprint into some file names (for example `dotnet.native.<fingerprint>.wasm`).
+It takes the fingerprint before the function-name section is stripped, and that section depends on the build paths.
+The names are written into the boot config inside `dotnet.js`, so the totals move a little.
+
+- A second folder on the same machine: `Honest` 1,424,691 brotli (+18), `Extreme` 1,211,016 (−2).
+  Raw totals and the sha256 of the final `dotnet.native.wasm` were the same.
+- The first CI build on a GitHub runner: `Honest` raw 4,243,654, brotli 1,425,104, gzip 1,707,048, 43 files (+431 brotli, +42 raw);
+  `Extreme` raw 3,851,404, brotli 1,211,189, gzip 1,507,487, 8 files (+171 brotli, +43 raw). That is about 0.03% and 0.01%.
+
+The live demo shows the numbers of its own CI build, so they differ from this README by about that much.
+The tables in this README keep the measured local finals.
 
 To serve the `.br` files with `Content-Encoding: br` during the check (the round-2 gate), set `SERVE_ENCODED=br`:
 
@@ -223,114 +430,6 @@ node tools/stress.mjs artifacts/extreme-stress/wwwroot
 - **Small differences.** If your numbers differ, check the SDK version (`dotnet --version`), the workload and the tool versions above.
   The bundle has one integrity value, so a changed byte anywhere in it changes the whole file.
 
-## How to reduce Blazor WebAssembly download size in your own app
-
-All numbers are measured brotli deltas from [`results/experiments.jsonl`](results/experiments.jsonl).
-"Run" is the id of the measurement in that file. Unless a row says otherwise, a delta is one setting alone on the default
-`Honest` app (run `h00-default`, 2,563,523 brotli).
-
-### Which trimming and feature-switch settings save the most
-
-These are the safe settings that `Honest` uses. The kept MSBuild properties are in [`Directory.Build.props`](Directory.Build.props) (`SizeProfile=final`).
-
-| Setting | Δ brotli | Run | Cost or note |
-|---|---:|---|---|
-| `InvariantGlobalization=true` | −657,823 | `s-invglob` | Invariant culture only. Needs the relink (ICU leaves the native file). |
-| `EventSourceSupport=false` | −98,849 | `s-noeventsource` | No EventSource diagnostics. |
-| Bit.Minifier 11.0.0-pre-20 (`UseBitMinifier=true`) | −91,369 | `s-bitmin` | Build-time package; renames non-public framework names. |
-| `InvariantTimezone=true`, `BlazorEnableTimeZoneSupport=false` | −64,384 | `s-invtz` | UTC only. Needs the relink. |
-| `MetricsSupport=false` | −50,418 | `s-nometrics` | No metrics. |
-| `DynamicCodeSupport=false` | −30,502 | `c-honest-dyncode` (on top of the levers above) | DI and expression trees use slower reflection paths. |
-| `WasmEnableSIMD=false` | −27,385 | `s-nosimd` | Slower runtime. Needs the relink. |
-| `WasmEnableExceptionHandling=false` | −27,329 | `s-noeh` | Emscripten's JS-based fallback. Only −199 on top of SIMD off (`x-noeh`). |
-| `BitMinifyAggressive=true` | −17,176 | `c-honest-bitmin-aggr` (on top) | Public framework names are renamed too (harder to read logs). |
-| `EmccLinkOptimizationFlag=-Oz` | −7,598 | `s-linkOz` | Ignored without the relink. |
-| `HttpActivityPropagationSupport=false` | −6,477 | `s-nohttpactivity` | No HTTP activity propagation. |
-| `EmccExtraLDFlags=-sMALLOC=emmalloc` | −2,089 | `x-emmalloc` (on `Extreme`) | Smaller, simpler allocator. |
-| `TrimMode=full` + `TrimmerRootAssembly` for the app | −1,699 | `s-trimfull` | Without the root the app breaks (see below). |
-| `StackTraceSupport=false` | −432 | `s-nostacktrace` | No stack traces in exceptions. |
-| `TrimmerRemoveSymbols=true`, `DebugType=none`, `GenerateDocumentationFile=false` | −145 | `s-nosymbols` | No debug symbols. |
-| `WasmEnableWebcil=false` | +498 | `s-nowebcil` | Bigger alone, −278 in the full chain (`h24-nowebcil`), so kept. |
-| `WasmFingerprintDotnetJs=false`, `BlazorFingerprintBlazorJs=false` | +33 | `s-nofingerprint` | About zero (noise). |
-
-The native relink itself (the default with the workload) saves 36,377 on the template (`baseline-norelink` vs `baseline`).
-
-### Post-processing: bundle, wasm-opt, terser, native stubs
-
-These steps run after `dotnet publish`. They are done by `build.sh` with the scripts in [`tools/`](tools). Measured on `Extreme`.
-
-| Step | Δ brotli | Run | Cost or note |
-|---|---:|---|---|
-| One bundle file for all 32 assemblies (`tools/bundle.mjs`) | −75,030 | `r2-base-br` → `r2-b-group` | One integrity value for all; no per-assembly caching. Also −32k under gzip. |
-| Native function stubs by name (`tools/wasmstub.mjs`) | −23,337 | `r2-x-names` → `f2-extreme` | Stubbed code traps if it ever runs (PDB/zlib, AOT lookups, interpreter SIMD, thread dump). |
-| terser on the JS files (round 1) | −21,916 | `e04-minify` | Files must be rebuilt with `build.sh` (integrity values are rewritten). |
-| Mono.Cecil metadata pass (`tools/MetaStrip`) | −20,134 | `r2-c1-slim-aggr` → `r2-m-props-notasks` | Reflection over compiler-only attributes, framework properties/events and consts finds nothing. |
-| `wasm-opt -Oz` on `dotnet.native.wasm` (round 1) | −18,608 | `e03-wasmopt` | |
-| Aggressive terser + smaller boot config | −2,572 | `r2-c1-slim-aggr` | |
-| `wasm-opt -tnh --gufa` | −1,509 | `r2-b-group` → `r2-n-tnh-gufa` | `-tnh` assumes traps never happen. |
-| `wasm-opt --converge` | −822 | `x-wasmopt-converge` | |
-
-`Honest` with the round-2 post-processing (no bundle, no code change) went from 1,519,331 to 1,424,673 (`f2-honest`, −94,658).
-
-### Code changes (what `Extreme` adds)
-
-| Change | Δ brotli | Run | Cost or note |
-|---|---:|---|---|
-| Own router + HTTP through JS `fetch` (no `HttpClient` or System.Text.Json in app code) | −137,828 | `e00-extreme` (vs `Honest` with the same settings) | No `@page` routing, no `HttpClient`. |
-| ILLink stubs: `Console.get_Error`, `JsonStreamConfigurationSource.Build` | −16,682 | `x-subst2a` | `Console.Error` is null; `appsettings.json` is ignored. |
-| ILLink stub: `DomainNameHelper.TryGetUnicodeEquivalent` | −2,645 | `x-subst2c` | Unicode (IDN) host names are not converted. |
-| ILLink stubs: `AddEnvironmentVariables`, culture provider checks | −2,034 | `x-subst` | Environment variables are not in `IConfiguration`. |
-
-### Settings that did nothing
-
-About zero bytes each, so they were reverted.
-
-| Setting | Δ brotli | Run |
-|---|---:|---|
-| `DebuggerSupport=false` | +17 | `s-nodebugger` |
-| `UseSystemResourceKeys=true` | +52 | `s-sysreskeys` |
-| `MetadataUpdaterSupport=false` | +25 | `s-nometadataupd` |
-| `NullabilityInfoContextSupport=false` | −25 | `s-nonullability` |
-| `_AggressiveAttributeTrimming=true` | +4 | `s-aggrattr` |
-| `UseSizeOptimizedLinq=true` | +46 | `s-sizelinq` |
-| `Http3Support=false`, `UseNativeHttpHandler=true` | −57 | `s-nohttp3` |
-| `StartupHookSupport=false` | 0 | `x-startuphook` |
-| `WasmNativeStrip=true`, `WasmEmitSymbolMap=false`, `WasmEnableThreads=false` | 0 | `h23-strip` |
-| `SatelliteResourceLanguages=en` | 0 | `h19-satellite` |
-| `-sASSERTIONS=0 -sSTACK_OVERFLOW_CHECK=0` | 0 | `x-noassert` |
-| `WasmInitialHeapSize=16777216` | +295 | `x-heap` |
-| ILLink stubs for `AppContext.OnProcessExit`, `Environment.StackTrace` and three more | +86 | `r2-u-all` |
-| `Microsoft.Extensions.DependencyInjection.DisableDynamicEngine=true` | +13 | `r2-s-didynamic` |
-| `System.Globalization.PredefinedCulturesOnly=true` | +5 | `r2-s-cultures` |
-
-The stubbed code stays reachable from other roots, so the stubs change nothing.
-
-### Settings that broke the app or the build
-
-All of these were reverted.
-
-| Setting | What happened |
-|---|---|
-| `JsonSerializerIsReflectionEnabledByDefault=false` | JS interop breaks: `NoMetadataForType` in `DotNetDispatcher.ParseArguments` (`h11-jsonnoreflect`). |
-| `TrimMode=full` without rooting the app assembly | `CtorNotLocated, Honest.Layout.MainLayout` (`h01-trimfull-noroot`). |
-| ILLink `--ignore-descriptors true` | The app does not start (`x-ignoredesc`). |
-| `WasmBuildNative=false` with `InvariantGlobalization`, `InvariantTimezone` or `WasmEnableSIMD=false` | Build error: `WasmBuildNative is required ...`. |
-| `EmccExtraLDFlags=-sFILESYSTEM=0` | Build error: `-sFORCE_FILESYSTEM cannot be used with -sFILESYSTEM=0` (`x-nofs`). |
-| `EmccExtraLDFlags=--closure=1` | `google-closure-compiler was not found`; after installing it, a file is missing from the workload pack (`x-closure`, `x-closure2`). |
-| ILLink stub for the STJ `EnumConverter` | ILLink crash `IL1012` (`x-subst2b`). |
-| Cecil: property metadata removed in all of CoreLib | Mono assertion `object.c:146` (`r2-m-props`). |
-| All AOT runtime functions stubbed | `RuntimeError: unreachable` at startup (`r2-x-aot`). |
-| jiterpreter exports removed (`wasm-metadce`) | Check fails: the runtime JS needs the exports (`r2-n-jiterp-dce`). |
-| `UseMonoRuntime=false` with `WasmEnableExceptionHandling=false` | Build error: CoreCLR needs wasm exception handling (`h28-coreclr`). |
-
-Worked, but worse:
-
-| Setting | Δ brotli | Why reverted |
-|---|---:|---|
-| `UseMonoRuntime=false` (CoreCLR on wasm) | +422,347 | Works, but much bigger than Mono (`c-honest-coreclr`). |
-| `WasmRunWasmOpt=false` | +1,395,714 | Without the SDK pass the native file keeps names and debug data (`r2-n-norunopt`). |
-| Bundle including `dotnet.native.wasm` | −79,082 | 4k smaller than the kept bundle, but no streaming compile: first render 381 ms (`r2-b-group-wasm`). |
-
 ## What Extreme gives up
 
 Still real Blazor: Razor components rendered by the stock `WebAssemblyRenderer`, started by the stock `WebAssemblyHostBuilder`,
@@ -356,19 +455,20 @@ Lost in both variants (settings): culture-specific formatting, time zones (UTC o
 stack traces in exceptions, dynamic code paths, SIMD (slower runtime), wasm exception handling (JS fallback), the debugger,
 and readable framework names in logs.
 
-## Why the app is not under 1.1 MB
+## What stops a Blazor WebAssembly app from getting smaller
 
 `Extreme` final, brotli: native 359,489 · JS 98,729 · managed 752,074 (the bundle) · HTML and data 726.
-Each further saving needs an option the owner ruled out.
+Going lower in any of these parts needs changes that this project kept out of scope:
+no fork or custom build of the runtime, and the stock Blazor host and renderer stay.
 
 | Part | Brotli | What is left | What going lower needs |
 |---|---:|---|---|
-| Native (`dotnet.native.wasm`) | 359,489 | Mono interpreter, GC, metadata loader, marshalling, emmalloc, libc | A custom runtime build (ruled out) |
-| JS | 98,729 | `dotnet.runtime.js` 47,048 (with the jiterpreter), `blazor.webassembly.js` 22,808, `dotnet.native.js` 17,573, `dotnet.js` 11,300 | Changing the runtime or Blazor JS logic (ruled out) |
-| Managed (`b.bin`) | 752,074 | CoreLib 408,929 and System.Text.Json 120,906 (each compressed alone) | A custom host or renderer, so JS interop stops using reflection-based JSON (ruled out) |
+| Native (`dotnet.native.wasm`) | 359,489 | Mono interpreter, GC, metadata loader, marshalling, emmalloc, libc | A custom runtime build |
+| JS | 98,729 | `dotnet.runtime.js` 47,048 (with the jiterpreter), `blazor.webassembly.js` 22,808, `dotnet.native.js` 17,573, `dotnet.js` 11,300 | Changes to the runtime or Blazor JS logic |
+| Managed (`b.bin`) | 752,074 | CoreLib 408,929 and System.Text.Json 120,906 (each compressed alone) | A custom host or renderer, so JS interop stops using reflection-based JSON |
 
-Native + JS + CoreLib + System.Text.Json alone are 988,053 bytes. So 1,100,000 would need 111,018 more bytes
-saved from parts that only a ruled-out option can touch.
+Native + JS + CoreLib + System.Text.Json alone are 988,053 bytes. These parts get smaller only with changes
+to the runtime itself, to its JS, or to the Blazor host.
 
 **If a runtime fork were allowed (estimates from research, not measurements).**
 Native part: about 22–27K brotli less with different build flags on stock source, about 42–57K with small patches,
@@ -390,17 +490,16 @@ With the relink, the round-1 finals (which can also use the settings that need r
 removes ICU from the native file.
 
 **Is turning SIMD off worth it?**
-`WasmEnableSIMD=false` gives −27,385 alone (−28,098 in the chain). The runtime is slower. The owner accepted that for this demo.
-
-**Does GitHub Pages serve brotli?**
-No. GitHub Pages compresses with gzip only, so the transfer there is close to the gzip column (1,507,342 for `Extreme`).
+`WasmEnableSIMD=false` gives −27,385 alone (−28,098 in the chain). The runtime is slower; this demo accepts that.
 
 **How much smaller is brotli than gzip?**
 About 20% for `Extreme`: 1,211,018 brotli against 1,507,342 gzip.
+The live demo is served with gzip, so it shows the gzip size.
 
-**Can it go under 1.1 MB without a runtime fork?**
-No way was found. Native + JS + CoreLib + System.Text.Json alone are already 988,053 bytes, and every other part needs a ruled-out option.
-See [Why the app is not under 1.1 MB](#why-the-app-is-not-under-11-mb).
+**Can it go lower without a runtime fork?**
+No more ways were found with the stock runtime and the stock Blazor host. Native + JS + CoreLib + System.Text.Json alone
+are already 988,053 bytes, and these parts need changes to the runtime or the host to get smaller.
+See [What stops a Blazor WebAssembly app from getting smaller](#what-stops-a-blazor-webassembly-app-from-getting-smaller).
 
 **Is CoreCLR on wasm smaller than Mono?**
 No. `UseMonoRuntime=false` works, but it is +422,347 brotli bigger than Mono.
@@ -432,102 +531,12 @@ No. `UseMonoRuntime=false` works, but it is +422,347 brotli bigger than Mono.
 | `results/` | `experiments.jsonl` (one line per run). The small `meta-*.json` inputs it was made from, the per-run trace folders (`runs/<id>/`) and the named native analysis build (`native-symbols/`) are kept locally, not published. |
 | `.github/workflows/pages.yml` | The GitHub Pages build and deploy. |
 | `Host/` | The App Service host: a small ASP.NET Core app that serves the `.br`/`.gz` files (`Program.cs`), its `web.config` for Windows, and `iis-static/web.config` (IIS-only option, not tested). |
+| `docs/hosting.md`, `docs/hosting.ru.md` | How the demo is hosted: GitHub Pages and Azure App Service. |
 | `.github/workflows/azure.yml` | The manual Azure App Service build and deploy (Native AOT host). |
 | `tools/host-gate.sh`, `tools/site-check.mjs`, `tools/aot-toolchain.sh` | The host gate (both apps through the host, curl and security checks, idle resources) and a user-local clang for Native AOT on a machine without a C toolchain. |
 
 `artifacts/` and `out/` are build outputs and are not in git. Some scripts in `tools/` (parallel runs, gates) were used for the
 experiments on the Linux build machine; they need only the tools listed above.
-
-## Hosting on GitHub Pages
-
-The workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml) ("Blazor WebAssembly minification demo - GitHub Pages") runs on every push to
-`main` and can also be started by hand. It installs the same tools as above, runs `./build.sh honest` and `./build.sh extreme`,
-measures both, builds the site with `tools/assemble-site.mjs` under the Pages base path, checks both apps there with a Pages-like
-server, and deploys.
-
-One-time steps:
-
-1. Make the repository public. Free GitHub Pages needs a public repository; a private one needs a paid plan.
-2. Push `main`.
-3. In **Settings → Pages**, set **Source** to **GitHub Actions**.
-
-The site has a small landing page with the measured sizes, and the two apps under `honest/` and `extreme/`.
-Pages has no SPA fallback, so deep links work through route copies (`counter.html`, `fetch.html`) and a root `404.html` that redirects.
-The site also has `robots.txt` and a robots meta tag.
-
-GitHub Pages serves gzip only, so the transfer there is close to the gzip column (see [Blazor WASM brotli vs gzip size](#blazor-wasm-brotli-vs-gzip-size-what-you-download-on-the-demo-site)).
-
-<!-- APP-SERVICE:START -->
-## Hosting on Azure App Service (brotli)
-
-GitHub Pages only sends gzip. To serve the build's own brotli files, the repository has a tiny host app, [`Host/`](Host/),
-and a manual workflow, [`.github/workflows/azure.yml`](.github/workflows/azure.yml), for an existing App Service plan
-(tested size: B1). It works on a Windows or a Linux plan.
-
-**What the host does.** For a request to `X` it sends `X.br` with `Content-Encoding: br` when the browser accepts brotli,
-else `X.gz` with gzip, else the plain file. It never compresses on the fly. The file table is built once at start-up, so
-there is no disk scan per request and no file is held in memory (`SendFileAsync`). Unknown paths under `/honest/` or
-`/extreme/` get that app's `index.html` (status 200), anything else is 404. Fingerprinted files are cached for a year;
-`index.html`, `dotnet.js`, `blazor.webassembly.js`, `data.json` and the bundle `b.bin` use `no-cache` (the page carries the
-bundle's integrity value). Every response has `X-Robots-Tag: noindex, nofollow`, `X-Content-Type-Options: nosniff`,
-`Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and a Content-Security-Policy with the hashes of each page's inline
-scripts (no `'unsafe-inline'` for scripts). `/robots.txt` disallows everything. Only GET and HEAD.
-
-**Idle resources** (measured on the Linux build machine, linux-x64; Windows was not measured):
-
-| Build | Disk | First response after start | RSS after start | after a cold load of both apps | after 5 min idle | Threads (idle) | CPU over 1 idle minute |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Framework-dependent `net10.0` | 0.1 MB (+ runtime) | 127 ms | 53.5 MB | 61.9 MB | 63.5 MB | 15 | 0.017 % |
-| Self-contained, trimmed | 26.5 MB | 295 ms | 31.9 MB | 37.0 MB | 38.2 MB | 13 | 0 % |
-| **Native AOT (used)** | 6.1 MB | **20 ms** | **12.5 MB** | **17.0 MB** | **15.4 MB** | 10 | 0 % |
-
-The workflow deploys the Native AOT build. All three passed the same gate: both apps through the host, zero console errors,
-every `_framework` response brotli-encoded, transferred bytes equal to the sum of the `.br` files
-(honest 1,424,683, extreme 1,211,025 — a few bytes more than the measured build because `<base href>` changes per app).
-
-**Tested and not tested.** Tested on Linux only (the host binary, the site and all checks on the build machine).
-Not tested: a real deploy to Azure, the Windows plan (ASP.NET Core Module, out-of-process), and the "IIS only" option below.
-
-**One-time setup**
-
-1. Create the web app in your existing plan.
-   - Portal: **App Services → Create → Web App**, pick the resource group and **the existing plan** (its OS decides Windows or
-     Linux). **Publish: Code**, **Runtime stack: .NET 10 (LTS)**. The host is a self-contained executable, so the stack is only
-     needed for the platform image.
-   - CLI (Linux plan): `az webapp create -g <resource-group> -p <plan-name> -n <app-name> --runtime "DOTNETCORE:10.0"`
-   - CLI (Windows plan): `az webapp create -g <resource-group> -p <plan-name> -n <app-name> --runtime "dotnet:10"`
-   - The exact runtime names change over time: `az webapp list-runtimes --os linux` / `--os windows` lists them.
-2. Linux only: set the start-up command (**Configuration → General settings → Startup Command**):
-   `chmod +x /home/site/wwwroot/Host && /home/site/wwwroot/Host`
-   (CLI: `az webapp config set -g <resource-group> -n <app-name> --startup-file "chmod +x /home/site/wwwroot/Host && /home/site/wwwroot/Host"`).
-   On Windows nothing is needed: the workflow writes a `web.config` that starts `Host.exe` out-of-process and turns IIS compression off.
-3. Get the publish profile: **Overview → Download publish profile** (CLI: `az webapp deployment list-publishing-profiles -g <resource-group> -n <app-name> --xml`).
-   If the download is disabled, turn on **Configuration → General settings → SCM Basic Auth Publishing Credentials**.
-4. In GitHub: **Settings → Environments → New environment `azure-demo`**, add the deployment branch rule `main`, and add the
-   environment secret `AZURE_WEBAPP_PUBLISH_PROFILE` (the whole XML file). Then **Settings → Secrets and variables → Actions → Variables**:
-   `AZURE_WEBAPP_NAME` = the app name, `AZURE_WEBAPP_OS` = `linux` or `windows`. Optional `AZURE_WEBAPP_HOST` = `iis` (see below).
-5. Run it: **Actions → "Blazor WebAssembly minification demo - Azure App Service" → Run workflow** on `main`.
-   The last step checks over HTTPS that the wasm and the bundle arrive with `content-encoding: br` and the exact `.br` length.
-
-**Check brotli yourself.** Open the site, DevTools → **Network**, tick **Disable cache**, reload. Add the column
-**Content-Encoding** (right-click the header row): `_framework` files show `br`. The **Transferred** total should be close to the brotli column.
-
-**Settings that lower idle use** (names as in the portal / CLI; set them yourself):
-- **Always On** off (`az webapp config set --always-on false`): the app is unloaded after 20 minutes without requests, so idle use is zero.
-  The next visitor waits for the platform cold start plus the host's own start (20 ms for the AOT host, measured).
-- **Session affinity (ARR affinity)** off (`az webapp update --client-affinity-enabled false`): the app has no sessions.
-- **Application Insights**, **App Service logs** and **Health check** off: each adds requests or an agent.
-- **Platform: 64 Bit** on Windows (`--use-32bit-worker-process false`): the AOT host is a 64-bit executable.
-- **HTTP version 2.0** (`--http20-enabled true`): fewer connections for the many small files.
-
-**Windows without an app process (not tested).** With `AZURE_WEBAPP_HOST=iis` on a Windows plan the workflow deploys only the
-files plus [`Host/iis-static/web.config`](Host/iis-static/web.config): URL Rewrite rules make IIS itself serve `X.br` with
-`Content-Encoding: br`. It is based on Microsoft's sample for Blazor WebAssembly on IIS, but it has not been run on IIS.
-
-**Can App Service change our encoded responses?** On Windows, IIS compression is turned off in the generated `web.config`
-(`urlCompression`), so IIS has nothing to add. On Linux the platform passes the app's response through. Neither was checked on a real
-App Service yet; the workflow's last step is that check.
-<!-- APP-SERVICE:END -->
 
 ## Full log and report page
 
