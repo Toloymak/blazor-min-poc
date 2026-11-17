@@ -85,15 +85,18 @@ const TEMPLATE = log.get('baseline')?.brotli_total ?? null;
 const WAYS = levers(log); // same rows and numbers as the lever table at the top of README.md
 // Recipe finals (the published numbers, before page styles) from the log; the demo as served comes from the sizes
 // json measured on this build (with the apps' page styles).
+// Every number in the cards and the totals table comes from the log (like the README): recipe finals = f2-* runs,
+// demo as served with page styles = f3-*-style runs. The sizes files of this build only feed one separate line.
 const RECIPE = { honest: log.get('f2-honest')?.brotli_total ?? null, extreme: log.get('f2-extreme')?.brotli_total ?? null };
+const STYLED = { honest: log.get('f3-honest-style') ?? null, extreme: log.get('f3-extreme-style') ?? null };
 const pctSmaller = v => TEMPLATE != null && v != null ? (100 * (TEMPLATE - v) / TEMPLATE).toFixed(1) : 'n/a';
 const plus = n => n == null ? 'n/a' : (n >= 0 ? '+' : '−') + fmt(Math.abs(n));
-const card = (name, s, blurb) => `<article class="v">
+const card = (name, blurb) => `<article class="v">
 <h2>${name}</h2>
 <p class="big">${fmt(RECIPE[name.toLowerCase()])}<span>bytes brotli, recipe final</span></p>
 <p class="pct">${pctSmaller(RECIPE[name.toLowerCase()])}% smaller than the template</p>
 <p class="m">${blurb}</p>
-<p class="m">Demo as served, with page styles: ${fmt(s?.coldBr)} (${plus(s && RECIPE[name.toLowerCase()] != null ? s.coldBr - RECIPE[name.toLowerCase()] : null)} bytes)</p>
+<p class="m">Demo as served, with page styles: ${fmt(STYLED[name.toLowerCase()]?.brotli_total)} (${plus(STYLED[name.toLowerCase()]?.brotli_total != null && RECIPE[name.toLowerCase()] != null ? STYLED[name.toLowerCase()].brotli_total - RECIPE[name.toLowerCase()] : null)} bytes)</p>
 <a class="btn" href="${name.toLowerCase()}/">Open ${name}</a>
 </article>`;
 // bar widths as classes (no style= attributes: the host CSP allows only the hashed <style> block)
@@ -138,8 +141,8 @@ ${barCss}</style>
 <h1>Blazor WebAssembly minification on .NET 11</h1>
 <p class="lead">The same three-page Blazor WebAssembly app, built and measured in more than 160 configurations. Two final variants are kept. The template downloads ${fmt(TEMPLATE)} bytes brotli.</p>
 <section class="cards">
-${card('Honest', SH, 'Stock Blazor APIs only. All savings come from build settings and post-processing.')}
-${card('Extreme', SE, 'Also changes code: its own router, HTTP through JS <code>fetch</code>, one bundle for all assemblies.')}
+${card('Honest', 'Stock Blazor APIs only. All savings come from build settings and post-processing.')}
+${card('Extreme', 'Also changes code: its own router, HTTP through JS <code>fetch</code>, one bundle for all assemblies.')}
 </section>
 <h2>Ways to reduce the download size</h2>
 <p class="note">Brotli bytes each change saved. Each saving was measured alone or as one step on top of earlier steps, so the savings do not add up exactly. The ${repo ? `<a href="${repo}#how-to-reduce-blazor-webassembly-download-size">README</a>` : 'README'} has the details.</p>
@@ -152,11 +155,11 @@ ${WAYS.map(w => `<li><span>${w.label}</span><b>${w.savedText}</b><i><s class="${
 <tr><th>Build</th><th>Raw</th><th>Brotli</th><th>Gzip -9</th><th>Files</th></tr>
 ${row('Template (<code>dotnet new blazorwasm</code>)', tb?.raw_total, TEMPLATE, null, tb?.files?.length)}
 ${row('Honest, recipe final', fh?.raw_total, fh?.brotli_total, fh?.gzip_total, fh?.files?.length)}
-${row('Honest, demo as served, with page styles', SH?.coldRaw, SH?.coldBr, SH?.coldGz, SH?.coldFiles)}
+${row('Honest, demo as served, with page styles', STYLED.honest?.raw_total, STYLED.honest?.brotli_total, STYLED.honest?.gzip_total, STYLED.honest?.files?.length)}
 ${row('Extreme, recipe final', fx?.raw_total, fx?.brotli_total, fx?.gzip_total, fx?.files?.length)}
-${row('Extreme, demo as served, with page styles', SE?.coldRaw, SE?.coldBr, SE?.coldGz, SE?.coldFiles)}
+${row('Extreme, demo as served, with page styles', STYLED.extreme?.raw_total, STYLED.extreme?.brotli_total, STYLED.extreme?.gzip_total, STYLED.extreme?.files?.length)}
 </table></div>
-<p class="note">${served}</p>
+${SH?.coldBr != null && SE?.coldBr != null ? `<p class="note">This build measured ${fmt(SH.coldBr)} (Honest) and ${fmt(SE.coldBr)} (Extreme) bytes brotli. Totals differ by a few hundred bytes between build machines.</p>\n` : ''}<p class="note">${served}</p>
 <footer><a href="report.html">Detailed report of every measured run</a>${repo ? `<a href="${repo}">Source and documentation</a>` : ''}</footer>
 </body></html>
 `;
