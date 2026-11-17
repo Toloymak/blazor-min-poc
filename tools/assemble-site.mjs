@@ -21,7 +21,7 @@ import crypto from 'node:crypto';
 
 const args = process.argv.slice(2);
 const hostIdx = args.indexOf('--host'); const host = hostIdx >= 0 ? args.splice(hostIdx, 2)[1] : 'pages';
-// --repo https://github.com/<owner>/<repo>: link to the README from the landing page and the report (omit when unknown)
+// --repo https://github.com/<owner>/<repo>: link to the repository (source and documentation) from the landing page and the report (omit when unknown)
 const repoIdx = args.indexOf('--repo'); const repo = repoIdx >= 0 ? args.splice(repoIdx, 2)[1] : (process.env.REPO_URL || null);
 let [base, out, sh, se] = args;
 if (!base.startsWith('/')) base = '/' + base;
@@ -40,7 +40,8 @@ const metaCost = [];
 const injectMeta = (name, html) => {
   const withMeta = html.replace(/<head>/i, '<head>' + META);
   const a = Buffer.from(html), b = Buffer.from(withMeta);
-  metaCost.push(`${name}: +${b.length - a.length} raw, +${br(b).length - br(a).length} brotli, +${gz(b).length - gz(a).length} gzip`);
+  const sg = n => (n >= 0 ? "+" : "") + n;
+  metaCost.push(`${name}: ${sg(b.length - a.length)} raw, ${sg(br(b).length - br(a).length)} brotli, ${sg(gz(b).length - gz(a).length)} gzip`);
   return withMeta;
 };
 
@@ -73,28 +74,64 @@ else document.write('<p>Not found. <a href="'+b+'">Home</a></p>');
 fs.writeFileSync(path.join(out, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
 
 const fmt = n => n == null ? 'n/a' : n.toLocaleString('en-US');
-const row = (name, f) => {
-  let s = null; try { s = JSON.parse(fs.readFileSync(f, 'utf8')); } catch {}
-  return `<tr><td><a href="${name}/">${name}</a></td><td>${fmt(s?.coldRaw)}</td><td>${fmt(s?.coldBr)}</td><td>${fmt(s?.coldGz)}</td><td>${s?.coldFiles ?? 'n/a'}</td></tr>`;
-};
+const readSizes = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+const SH = readSizes(sh), SE = readSizes(se);
+// Measured runs from the log: the template baseline and the savings of the main changes (brotli bytes, each run
+// against its base run in the log).
+const log = new Map(fs.readFileSync(path.join(root, 'results', 'experiments.jsonl'), 'utf8').split('\n').filter(Boolean)
+  .map(l => JSON.parse(l)).map(o => [o.id, o]));
+const TEMPLATE = log.get('baseline')?.brotli_total ?? null;
+const WAYS = [
+  ['h02-invglob', 'Invariant globalization (no ICU data, ICU left out of the native file)', 'both'],
+  ['e00-extreme', 'Own router and JS <code>fetch</code> instead of <code>Router</code> and <code>HttpClient</code>', 'Extreme'],
+  ['h05-noeventsource', '<code>EventSourceSupport=false</code>', 'both'],
+  ['c-honest-bitmin', 'Bit.Minifier on the trimmed assemblies', 'both'],
+  ['r2-b-group', 'All assemblies in one bundle, compressed together', 'Extreme'],
+  ['h03-invtz', 'Invariant time zones', 'both'],
+  ['h09-nometrics', '<code>MetricsSupport=false</code>', 'both'],
+  ['c-honest-dyncode', '<code>DynamicCodeSupport=false</code>', 'both'],
+  ['h20-nosimd', 'Native relink without SIMD', 'both'],
+  ['r2-m-props-notasks', 'Metadata pass with Mono.Cecil (attributes, consts, property metadata)', 'both'],
+  ['e04-minify', 'terser on the JavaScript files', 'both'],
+  ['e03-wasmopt', '<code>wasm-opt</code> on <code>dotnet.native.wasm</code>', 'both'],
+  ['r2-x-combo', 'Unused native runtime functions replaced by stubs', 'both'],
+  ['c-honest-bitmin-aggr', 'Bit.Minifier aggressive mode', 'both'],
+].map(([id, label, where]) => {
+  const r = log.get(id), base = r?.base ? log.get(r.base) : null;
+  // delta field, or brotli minus the base run's brotli when the field is empty in the log
+  const d = r?.delta_brotli ?? (r?.brotli_total != null && base?.brotli_total != null ? r.brotli_total - base.brotli_total : null);
+  return { id, label, where, d };
+}).filter(w => w.d != null && w.d < 0).sort((x, y) => x.d - y.d);
+const saving = (s, name) => s && TEMPLATE != null
+  ? `<strong>${name}</strong>: ${fmt(s.coldBr)} bytes brotli, ${fmt(TEMPLATE - s.coldBr)} fewer than the template (${(100 * (TEMPLATE - s.coldBr) / TEMPLATE).toFixed(1)}% smaller)`
+  : `<strong>${name}</strong>: n/a`;
+const row = (name, s) => `<tr><td><a href="${name}/">${name}</a></td><td>${fmt(s?.coldRaw)}</td><td>${fmt(s?.coldBr)}</td><td>${fmt(s?.coldGz)}</td><td>${s?.coldFiles ?? 'n/a'}</td></tr>`;
 const served = host === 'pages'
-  ? 'GitHub Pages compresses with gzip itself (no brotli), so the real transfer here is close to the gzip column.'
-  : 'This host (ASP.NET Core on Azure App Service) sends the build\'s own precompressed files: brotli (quality 11) when the browser accepts it, else gzip -9, so the real transfer is the brotli column.';
+  ? 'This demo on GitHub Pages is served with gzip (Pages does not send brotli), so the transfer here is close to the gzip column.'
+  : 'This host sends the build\'s own brotli files (quality 11) when the browser accepts brotli, so the transfer here is the brotli column.';
 let landing = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Blazor WebAssembly minification on .NET 11</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 16px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ccc;padding:.3rem .5rem;text-align:right}td:first-child,th:first-child{text-align:left}</style>
 </head><body>
 <h1>Blazor WebAssembly minification on .NET 11</h1>
-<p>Two variants of the same 3-page app (Home, Counter, Fetch), .NET 11, stock runtime.</p>
-<table><tr><th>Variant</th><th>Cold load raw bytes</th><th>brotli -q 11</th><th>gzip -9</th><th>Files</th></tr>
-${row('honest', sh)}
-${row('extreme', se)}
+<p>${saving(SH, 'Honest')}.<br>${saving(SE, 'Extreme')}.</p>
+<h2>Ways to reduce the download size</h2>
+<p>Measured brotli bytes each change saved, against the build just before it (same 3-page app, .NET 11, stock runtime).
+Honest uses only stock Blazor APIs; Extreme also changes code.</p>
+<table><tr><th>Change</th><th>Used in</th><th>Brotli bytes saved</th></tr>
+${WAYS.map(w => `<tr><td>${w.label}</td><td>${w.where === 'both' ? 'Honest and Extreme' : w.where}</td><td>${fmt(-w.d)}</td></tr>`).join('\n')}
 </table>
-<p>Sizes are measured by <code>measure.sh</code> over the files a headless browser downloads on a cold load of all pages,
-on the build as produced by <code>build.sh</code> (before this page and the apps' <code>&lt;base href&gt;</code>${host === 'pages' ? ' and robots meta tag' : ''} were adjusted for this site).</p>
+<h2>Totals</h2>
+<table><tr><th>Variant</th><th>Cold load raw bytes</th><th>brotli -q 11</th><th>gzip -9</th><th>Files</th></tr>
+<tr><td>template (<code>dotnet new blazorwasm</code>)</td><td>${fmt(log.get('baseline')?.raw_total)}</td><td>${fmt(TEMPLATE)}</td><td>n/a</td><td>${log.get('baseline')?.files?.length ?? 'n/a'}</td></tr>
+${row('honest', SH)}
+${row('extreme', SE)}
+</table>
+<p>Sizes are the files a headless browser downloads on a cold load of all pages, measured by <code>measure.sh</code>
+on the build made by <code>build.sh</code> (before this page and the apps' <code>&lt;base href&gt;</code>${host === 'pages' ? ' and robots meta tag' : ''} were adjusted for this site).</p>
 <p>${served}</p>
-<p><a href="report.html">Detailed report of every measured run</a>${repo ? ` · <a href="${repo}#readme">README and source</a>` : ''}</p>
+<p><a href="report.html">Detailed report of every measured run</a>${repo ? ` · <a href="${repo}">Source and documentation</a>` : ''}</p>
 </body></html>
 `;
 if (host === 'pages') landing = injectMeta('index.html (landing)', landing);

@@ -1,24 +1,48 @@
-# Blazor WebAssembly size PoC — results
+# Blazor WebAssembly minification on .NET 11 — results
 
-All final numbers come from **build machine** (Ubuntu 22.04 / WSL2), except rows marked `host=mac`.
+What each change saves in the download of the same 3-page Blazor WebAssembly app (Home, Counter, Fetch), measured in brotli bytes.
+Two final variants are kept: **Honest** uses only stock Blazor APIs (all savings come from build settings and post-processing),
+**Extreme** also changes code. All final numbers come from the Linux build machine (Ubuntu 22.04 / WSL2), except rows marked `host=mac`.
+
+## Ways to reduce the download size, and what each saves
+
+Brotli bytes saved by each change, measured against the run just before it (run ids are in `results/experiments.jsonl`):
+
+| change | used in | brotli bytes saved | run |
+|---|---|---:|---|
+| Invariant globalization (no ICU data; the relink leaves ICU out of the native file) | Honest, Extreme | 661,194 | `h02-invglob` |
+| Own router and JS `fetch` instead of `Router` and `HttpClient` | Extreme | 137,828 | `e00-extreme` |
+| `EventSourceSupport=false` | Honest, Extreme | 96,951 | `h05-noeventsource` |
+| Bit.Minifier on the trimmed assemblies (+17,176 more in aggressive mode) | Honest, Extreme | 78,547 | `c-honest-bitmin` |
+| All assemblies in one bundle, compressed together | Extreme | 75,030 | `r2-b-group` |
+| Invariant time zones | Honest, Extreme | 63,341 | `h03-invtz` |
+| `MetricsSupport=false` | Honest, Extreme | 52,095 | `h09-nometrics` |
+| `DynamicCodeSupport=false` | Honest, Extreme | 30,502 | `c-honest-dyncode` |
+| Native relink without SIMD | Honest, Extreme | 28,098 | `h20-nosimd` |
+| terser on the JavaScript files | Honest, Extreme | 21,916 | `e04-minify` |
+| Metadata pass with Mono.Cecil (attributes, consts, property metadata) | Honest, Extreme | 20,134 | `r2-m-props-notasks` |
+| `wasm-opt` on `dotnet.native.wasm` | Honest, Extreme | 18,608 | `e03-wasmopt` |
+| Unused native runtime functions replaced by stubs (about 9.4k more for the AOT lookup functions) | Honest, Extreme | 14,597 | `r2-x-combo` |
+
+Every other change that was tried, including the ones that did nothing or broke the app, is in the tables below.
+
+## Totals against the template
+
 Metric: sum over the files a headless Chromium downloads on a cold load of `/` plus client-side visits to
 Counter and Fetch (taken from the browser network log, not a directory listing). Brotli = quality 11, window 24
 (node zlib, gives the same bytes as `brotli -q 11`; checked on the Mac against the CLI). gzip = level 9.
-Target from the owner: **1,100,000 bytes brotli**.
 
-## Summary
-
-| variant | cold-load raw | brotli | gzip -9 | files | distance to target (brotli − 1,100,000) | check |
+| variant | cold-load raw | brotli | gzip -9 | files | brotli saved vs template | check |
 |---|---:|---:|---:|---:|---:|---|
-| template baseline (`dotnet new blazorwasm`, relink by default) | 8,447,649 | 2,589,350 | — | 50 | +1,489,350 | pass |
-| template baseline, no workload (Mac) | 8,494,253 | 2,627,714 | 3,252,043 | 50 | +1,527,714 | pass |
-| issue #86601 recipe on .NET 11 | 5,404,848 | 1,735,678 | 2,091,866 | 43 | +635,678 | load-only pass |
-| Honest round 1 final | 4,616,080 | 1,519,331 | 1,823,357 | 43 | +419,331 | pass |
-| Extreme round 1 final | 4,013,671 | 1,333,578 | 1,599,659 | 39 | +233,578 | pass |
-| **Honest final, round 2** (`./build.sh honest`, served from `.br`) | **4,243,612** | **1,424,673** | 1,706,941 | 43 | **+324,673** | pass |
-| **Extreme final, round 2** (`./build.sh extreme`, served from `.br`) | **3,851,361** | **1,211,018** | 1,507,342 | 8 | **+111,018** | pass |
+| template baseline (`dotnet new blazorwasm`, relink by default) | 8,447,649 | 2,589,350 | — | 50 | — | pass |
+| template baseline, no workload (Mac) | 8,494,253 | 2,627,714 | 3,252,043 | 50 | — | pass |
+| issue #86601 recipe on .NET 11 (empty template, invariant globalization) | 5,404,848 | 1,735,678 | 2,091,866 | 43 | 853,672 | load-only pass |
+| Honest round 1 final | 4,616,080 | 1,519,331 | 1,823,357 | 43 | 1,070,019 | pass |
+| Extreme round 1 final | 4,013,671 | 1,333,578 | 1,599,659 | 39 | 1,255,772 | pass |
+| **Honest final, round 2** (`./build.sh honest`, served from `.br`) | **4,243,612** | **1,424,673** | 1,706,941 | 43 | **1,164,677 (45.0%)** | pass |
+| **Extreme final, round 2** (`./build.sh extreme`, served from `.br`) | **3,851,361** | **1,211,018** | 1,507,342 | 8 | **1,378,332 (53.2%)** | pass |
 
-The 1,100,000-byte brotli target was **not reached** (Extreme is +111,018 over it). Round 2 details are at the end of this file.
+Round 2 details are at the end of this file.
 
 Machine-readable log of every run: `results/experiments.jsonl` (one line per run, append-only),
 raw trace files per run (file list with sizes, check log, build-log slice, network log) were kept locally in `results/runs/<id>/` and are not published.
@@ -195,7 +219,7 @@ The boot manifest is not a separate file in .NET 11: it is embedded in `dotnet.j
 | baseline-mac | dotnet new blazorwasm, Release publish, Mac, no wasm-tools workload (prebuilt native) | 8,494,253 | 2,627,714 | — | pass | experiment-only | reference: Mac without workload | mac |
 | baseline | dotnet new blazorwasm, Release publish on the Linux build machine with wasm-tools (default relink) | 8,447,649 | 2,589,350 | — | pass | experiment-only | baseline row | build machine |
 | baseline-norelink | WasmBuildNative=false | 8,487,593 | 2,625,727 | +36,377 | pass | experiment-only | workload A/B (a) | build machine |
-| i86601-recipe | blazorwasm --empty, HttpClient registration removed, InvariantGlobalization=true, BlazorEnableTimeZoneSupport=false, BlazorWebAssemblyPreserveCollationData=false (ignored by .NET 11); load-only check (template has one page) | 5,404,848 | 1,735,678 | -853,672 | pass | experiment-only | reference for the 1.1 MB claim | build machine |
+| i86601-recipe | blazorwasm --empty, HttpClient registration removed, InvariantGlobalization=true, BlazorEnableTimeZoneSupport=false, BlazorWebAssemblyPreserveCollationData=false (ignored by .NET 11); load-only check (template has one page) | 5,404,848 | 1,735,678 | -853,672 | pass | experiment-only | reference: the minimal recipe from dotnet/runtime #86601 | build machine |
 | h00-default | Honest app (3 pages, Router, NavLink, HttpClient + STJ source-gen), no size settings | 8,205,260 | 2,563,523 | -25,827 | pass | experiment-only | Honest start point | build machine |
 | w-h00-default-repeat | same as h00-default, in a parallel wave, other checkout path | 8,205,260 | 2,563,520 | -3 | pass | experiment-only | determinism check: native identical, managed differs by a few bytes (path in PDB data); fixed later with PathMap | build machine |
 
@@ -455,8 +479,8 @@ Extreme final, brotli: native 384,310 · JS loader 100,792 · managed 848,252 ·
   `dotnet.native.js` (18k), `dotnet.js` with the embedded boot config (13k). Going lower needs editing the runtime/Blazor JS (removing jiterpreter etc.) = patching the runtime.
 - **Managed (848k)**: CoreLib 420k + STJ 122k + Blazor 116k + host/DI/logging ~70k. Lower needs replacing the host (internal renderer) or
   making Blazor's interop work without reflection-based JSON (internal types can not be named in a source-generated context).
-- Even with every other managed assembly at zero, native + JS + CoreLib + STJ = 1.03 MB. **The 1.1 MB target is not reachable with the stock .NET 11
-  runtime and stock Blazor**: Extreme stops at 1,333,578 (+233,578). The issue #86601 recipe itself weighs 1,735,678 on .NET 11 with our metric.
+- Even with every other managed assembly at zero, native + JS + CoreLib + STJ = 1.03 MB with the stock .NET 11 runtime and stock Blazor.
+  Extreme round 1 ends at 1,333,578. The issue #86601 recipe itself weighs 1,735,678 on .NET 11 with our metric.
 
 ## Errors seen (exact text, short)
 
@@ -512,7 +536,7 @@ tools/matrix.sh steps/05-matrix.txt 6                    # re-run an experiment 
 
 ---
 
-# Round 2: Extreme toward 1,100,000 brotli
+# Round 2: more savings for Extreme (and Honest)
 
 Limits: no runtime/ASP.NET Core forks, stock `WebAssemblyHostBuilder`, renderer and `blazor.webassembly.js` (minify only).
 **Metric from round 2 on: bytes transferred as served from the `.br` files** (`SERVE_ENCODED=br` mode of `tools/serve.mjs`,
@@ -521,15 +545,15 @@ Limits: no runtime/ASP.NET Core forks, stock `WebAssemblyHostBuilder`, renderer 
 
 ## Result
 
-| | raw | served brotli | served gzip | distance to 1,100,000 | check | stress page |
+| | raw | served brotli | served gzip | brotli saved in round 2 | check | stress page |
 |---|---:|---:|---:|---:|---|---|
-| Extreme round 1 (`r2-base-br`) | 4,013,671 | 1,333,578 | 1,599,659 | +233,578 | pass | — |
-| **Extreme round 2 final** (`f2-extreme`) | **3,851,361** | **1,211,018** | **1,507,342** | **+111,018** | pass | pass 15/15 |
-| Honest round 1 | 4,616,080 | 1,519,331 | 1,823,357 | +419,331 | pass | — |
-| **Honest round 2 final** (`f2-honest`, no code change) | **4,243,612** | **1,424,673** | **1,706,941** | +324,673 | pass | — |
-| Honest + bundle (`f2-honest-bundle`, experiment row) | 4,240,357 | 1,344,434 | 1,675,892 | +244,434 | pass | — |
+| Extreme round 1 (`r2-base-br`) | 4,013,671 | 1,333,578 | 1,599,659 | — | pass | — |
+| **Extreme round 2 final** (`f2-extreme`) | **3,851,361** | **1,211,018** | **1,507,342** | **122,560** | pass | pass 15/15 |
+| Honest round 1 | 4,616,080 | 1,519,331 | 1,823,357 | — | pass | — |
+| **Honest round 2 final** (`f2-honest`, no code change) | **4,243,612** | **1,424,673** | **1,706,941** | 94,658 | pass | — |
+| Honest + bundle (`f2-honest-bundle`, experiment row) | 4,240,357 | 1,344,434 | 1,675,892 | 174,897 | pass | — |
 
-Target **not reached**. First render of Home in the check: 361 ms (no bundle) → 316 ms (bundle) → 291 ms (final).
+First render of Home in the check: 361 ms (no bundle) → 316 ms (bundle) → 291 ms (final).
 
 Final Extreme files (served brotli): `b.bin` (32 assemblies) 752,074 · `dotnet.native.wasm` 359,489 · `dotnet.runtime.js` 47,048 ·
 `blazor.webassembly.js` 22,808 · `dotnet.native.js` 17,573 · `dotnet.js` (boot config inside) 11,300 · `index.html` (incl. loader) 658 · `data.json` 68.
@@ -605,7 +629,7 @@ InteropServices.JavaScript 13,386; all parts alone sum to 818,901, the bundle is
   Lower = editing runtime/Blazor JS logic (rejected).
 - Managed 752,074: CoreLib 409k alone, STJ 121k alone. STJ goes only if JS interop stops using reflection-based JSON (renderer/host internals → custom host, rejected).
   DI + logging + options + configuration ~45k need replacing the host (rejected). Host bypass via `UnsafeAccessorType` was **not measured**.
-- Even native + JS + CoreLib + STJ alone (compressed separately) = 988k, so 1.1M would need about −111k more from parts only a rejected option can touch.
+- Even native + JS + CoreLib + STJ alone (compressed separately) = 988k; these parts get smaller only with one of the ruled-out options above.
 
 ## Round 2 files
 New: `tools/bundle.mjs`, `tools/compress.mjs`, `tools/wasmstub.mjs`, `tools/native-stub-estimate.sh`, `tools/native-symbols.sh`,
@@ -620,8 +644,8 @@ Pages gate (build machine, `/some-repo/`): both apps PASS, deep links PASS; acti
 
 # App Service host (brotli on the wire)
 
-`Host/` serves the final `build.sh` output with the build's own `.br`/`.gz` files (details and owner steps: README, "Hosting on
-Azure App Service"). Gate on the Linux build machine (`tools/host-gate.sh`), site assembled with base path `/`:
+`Host/` serves the final `build.sh` output with the build's own `.br`/`.gz` files (details and setup steps:
+[`docs/hosting.md`](docs/hosting.md)). Gate on the Linux build machine (`tools/host-gate.sh`), site assembled with base path `/`:
 
 | build | first response | RSS start / after cold load / after 5 min idle | threads idle | CPU 1 idle minute | disk | gate |
 |---|---:|---|---:|---:|---:|---|

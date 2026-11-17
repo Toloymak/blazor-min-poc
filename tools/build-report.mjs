@@ -2,7 +2,7 @@
 // Builds a self-contained HTML report from results/experiments.jsonl.
 // Usage: node tools/build-report.mjs <out.html> [--home <href>] [--repo <url>]
 //   Writes a complete HTML document for a static site (report.html next to the landing page), with a link back to
-//   the landing page (--home, default "./") and, if --repo is given, to the README. --standalone is accepted and ignored
+//   the landing page (--home, default "./") and, if --repo is given, to the repository. --standalone is accepted and ignored
 //   (it was the only mode left).
 // Output is deterministic: same input gives the same bytes.
 import fs from 'node:fs';
@@ -28,7 +28,6 @@ if (!OUT || pos.length > 1) {
 if (opts.repo != null && !/^https:\/\/\S+$/.test(opts.repo)) { console.error('--repo must be an https:// URL'); process.exit(2); }
 
 // ---------- config ----------
-const TARGET = 1_100_000;
 const IDS = { baseline: 'baseline', recipe: 'i86601-recipe', honest: 'f-honest', extreme: 'f-extreme', coreclr: 'c-honest-coreclr',
   honest2: 'f2-honest', extreme2: 'f2-extreme', honestBundle: 'f2-honest-bundle' };
 // The data file tags the bundle as "other". It holds the managed assemblies, so the report counts it as managed.
@@ -127,39 +126,30 @@ const H2 = get(IDS.honest2), X2 = get(IDS.extreme2), HB = get(IDS.honestBundle);
 const gX2 = groupSums(X2);
 const roundLine = (r1, r2, kind) => `<p class="rline">Round 1 <span data-check="${kind}-r1">${fmt(r1.brotli_total)}</span> → round 2 <strong>${fmt(r2.brotli_total)}</strong> <span class="muted">(${sfmt(r2.brotli_total - r1.brotli_total)})</span></p>`;
 
-// ---------- 1. verdict ----------
+// ---------- 2. totals against the template ----------
 function card(kind, title, sub, r, extra) {
-  const gap = r.brotli_total - TARGET;
   const saved = B.brotli_total - r.brotli_total;
   return `<div class="vcard ${kind}">
   <div class="vhead"><span class="vname">${title}</span><span class="vsub">${sub}</span></div>
   <div class="vnum"><span data-check="${kind}-brotli">${fmt(r.brotli_total)}</span> <span class="unit">bytes brotli</span></div>
   <div class="vmeta">${mb(r.brotli_total)} · raw <span data-check="${kind}-raw">${fmt(r.raw_total)}</span>${r.gzip_total != null ? ` · gzip <span data-check="${kind}-gzip">${fmt(r.gzip_total)}</span>` : ''}</div>
   <dl class="vgap">
-    <div><dt>Over target</dt><dd><span data-check="${kind}-gap">${sfmt(gap)}</span> <span class="muted">(${pct(gap, B.brotli_total)} of baseline)</span></dd></div>
     ${kind === 'baseline' ? '<div><dt>Saved vs baseline</dt><dd>—</dd></div>' : `<div><dt>Saved vs baseline</dt><dd>${fmt(saved)} <span class="muted">(${pct(saved, B.brotli_total)})</span></dd></div>`}
   </dl>${extra || ''}
 </div>`;
 }
-const verdict = `
-<section class="verdict" aria-labelledby="verdict-h">
-  <h2 id="verdict-h" class="sr-only">Verdict</h2>
-  <p class="status"><span class="pill bad big"><span aria-hidden="true">✕</span> Target not reached</span></p>
-  <p class="lead">The target is <strong>${fmt(TARGET)} bytes</strong> brotli. After two rounds, the smallest build, <strong>Extreme</strong>, is <strong>${fmt(X2.brotli_total)}</strong> bytes: <strong>${sfmt(X2.brotli_total - TARGET)}</strong> over the target. <strong>Honest</strong>, which uses only stock Blazor APIs, is <strong>${fmt(H2.brotli_total)}</strong> bytes: <strong>${sfmt(H2.brotli_total - TARGET)}</strong> over.</p>
+const totals = `
+<section class="totals" aria-labelledby="totals-h">
+  <h2 id="totals-h">Totals against the template</h2>
+  <p class="lead">The template app (<code>dotnet new blazorwasm</code>) downloads <strong>${fmt(B.brotli_total)}</strong> bytes brotli. <strong>Honest</strong>, which uses only stock Blazor APIs, downloads <strong>${fmt(H2.brotli_total)}</strong>: ${fmt(B.brotli_total - H2.brotli_total)} fewer, ${pct(B.brotli_total - H2.brotli_total, B.brotli_total)} smaller. <strong>Extreme</strong>, which also changes code, downloads <strong>${fmt(X2.brotli_total)}</strong>: ${fmt(B.brotli_total - X2.brotli_total)} fewer, ${pct(B.brotli_total - X2.brotli_total, B.brotli_total)} smaller.</p>
   <div class="vrow">
     ${card('baseline', 'Baseline', '<code>dotnet new blazorwasm</code>', B)}
     <span class="arrow" aria-hidden="true">→</span>
     ${card('honest', 'Honest', 'stock APIs: host builder, <code>Router</code>, <code>HttpClient</code>; round-2 post-processing, no code change', H2, roundLine(H, H2, 'honest') + `<p class="rline">Honest + bundle (experiment, not default): <span data-check="honest-bundle">${fmt(HB.brotli_total)}</span></p>`)}
     <span class="arrow" aria-hidden="true">→</span>
     ${card('extreme', 'Extreme', 'own router, JS <code>fetch</code>, ILLink stubs, one assembly bundle, native stubs, <code>wasm-opt</code>, terser', X2, roundLine(X, X2, 'extreme'))}
-    <span class="arrow" aria-hidden="true">→</span>
-    <div class="vcard target">
-      <div class="vhead"><span class="vname">Target</span><span class="vsub">set by the owner</span></div>
-      <div class="vnum"><span data-check="target">${fmt(TARGET)}</span> <span class="unit">bytes brotli</span></div>
-      <div class="vmeta">${mb(TARGET)} · ${pct(TARGET, B.brotli_total)} of baseline</div>
-      <p class="vnote">From <a href="https://github.com/dotnet/runtime/issues/86601">dotnet/runtime #86601</a>, a user report: “minimum size … in .net 7 is 1.1 MB”. The same recipe on .NET 11 measures <strong data-check="recipe-brotli">${fmt(R.brotli_total)}</strong> bytes with this metric (${sfmt(R.brotli_total - TARGET)}).</p>
-    </div>
   </div>
+  <p class="fineprint">For comparison: the minimal recipe from <a href="https://github.com/dotnet/runtime/issues/86601">dotnet/runtime #86601</a> (empty template, no <code>HttpClient</code>, invariant globalization) measures <strong data-check="recipe-brotli">${fmt(R.brotli_total)}</strong> bytes with this metric on .NET 11.</p>
   <p class="fineprint">Bytes = sum of the files a browser downloads on a cold first load plus a visit to every page, compressed with brotli quality 11. From round 2 on, the app is served from the final <code>.br</code> files with <code>Content-Encoding: br</code>, and the bytes transferred equal the sum of the <code>.br</code> files (the round-1 Extreme final gives the same ${fmt(get('r2-base-br').brotli_total)} bytes both ways, run <code>r2-base-br</code>). .NET SDK 11.0.100, stock Mono runtime, Release publish. 1 MB = 1,000,000 bytes, 1 kB = 1,000 bytes.</p>
 </section>`;
 
@@ -185,7 +175,7 @@ function stackBar({ r, name, sub }) {
   <div class="strack"><div class="sbar" style="width:${P(r.brotli_total)}">${segs}</div><span class="stotal" style="left:${P(r.brotli_total)}">${fmt(r.brotli_total)}</span></div>
 </div>`;
 }
-const legend = `<div class="legend" aria-label="Legend">${GROUPS.map((k) => `<span class="lg"><span class="sw s-${k}"></span>${GROUP_LABEL[k]}</span>`).join('')}<span class="lg"><span class="sw tline"></span>Target ${fmt(TARGET)}</span></div>`;
+const legend = `<div class="legend" aria-label="Legend">${GROUPS.map((k) => `<span class="lg"><span class="sw s-${k}"></span>${GROUP_LABEL[k]}</span>`).join('')}</div>`;
 const stackTable = `<div class="tablewrap"><table class="num">
 <thead><tr><th>Build</th>${GROUPS.map((k) => `<th>${GROUP_LABEL[k]}</th>`).join('')}<th>Total brotli</th><th>Total raw</th><th>Files</th></tr></thead>
 <tbody>${stackRows.map(({ r, name }) => { const g = groupSums(r).brotli; return `<tr><th scope="row">${esc(name)} <code>${esc(r.id)}</code></th>${GROUPS.map((k) => `<td data-check="grp-${r.id}-${k}">${fmt(g[k])}</td>`).join('')}<td><strong>${fmt(r.brotli_total)}</strong></td><td>${fmt(r.raw_total)}</td><td>${(r.files || []).length}</td></tr>`; }).join('')}</tbody></table></div>`;
@@ -195,7 +185,7 @@ const whereBytes = `
   <p class="intro">Brotli bytes per file group. The native runtime is <code>dotnet.native.wasm</code>. In the baseline, “other” is mostly ICU data (<code>icudt_EFIGS.dat</code>) and the Bootstrap CSS. In round 2, the managed group of Extreme (and of “Honest + bundle”) is one file, <code>b.bin</code>: the data file tags it “other”, this page counts it as managed. Compressed as one file, the assemblies are smaller than compressed one by one: all parts compressed alone sum to ${fmt(R2_ALONE.partsSum)} (from <code>RESULTS.md</code>), the bundle is ${fmt(gX2.brotli.managed)}.</p>
   ${legend}
   <div class="stack" role="img" aria-label="Stacked bars of brotli bytes per group; values are in the table below">
-    <div class="sgrid">${ticks.map((t) => `<span class="tick${t % 1_000_000 ? ' half' : ''}" style="left:${P(t)}"><span>${t === 0 ? '0' : (t / 1e6).toFixed(1) + ' MB'}</span></span>`).join('')}<span class="tgt" style="left:${P(TARGET)}"><span>target</span></span></div>
+    <div class="sgrid">${ticks.map((t) => `<span class="tick${t % 1_000_000 ? ' half' : ''}" style="left:${P(t)}"><span>${t === 0 ? '0' : (t / 1e6).toFixed(1) + ' MB'}</span></span>`).join('')}</div>
     ${stackRows.map(stackBar).join('\n')}
   </div>
   <details class="tview"><summary>Table view (exact bytes)</summary>${stackTable}</details>
@@ -242,7 +232,7 @@ const inheritedFails = runs.filter((r) => roundOf(r) === 1 && r.check === 'fail'
 const errText = (r) => r.build === 'failed' ? r.build_error : r.check_error;
 const levers = `
 <section aria-labelledby="lever-h">
-  <h2 id="lever-h">What each lever saved</h2>
+  <h2 id="lever-h">Ways to reduce the download size, and what each one saves</h2>
   <p class="intro">Measured brotli delta of each <strong>kept</strong> run against its <code>base</code> run. Longer bar = more bytes saved. A bar left of zero made the download bigger. Round 2 worked on Extreme only (Honest got the same post-processing, no code change).</p>
   <div class="tabs" role="tablist" aria-label="Lever set">${ALL_SETS.map((s, i) => `<button role="tab" id="tab-${s.key}" aria-controls="panel-${s.key}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${esc(s.label)}</button>`).join('')}</div>
   ${ALL_SETS.map((s, i) => `<div role="tabpanel" id="panel-${s.key}" aria-labelledby="tab-${s.key}"${i ? ' hidden' : ''}><p class="setnote">${esc(s.note)}</p><div class="legend"><span class="lg"><span class="sw save"></span>saved bytes</span><span class="lg"><span class="sw grow"></span>made it bigger</span></div>${leverChart(s.items)}</div>`).join('\n')}
@@ -334,14 +324,14 @@ const tradeoffs = `
   </div>
 </section>
 <section aria-labelledby="block-h">
-  <h2 id="block-h">What blocks going lower</h2>
-  <p class="intro">Extreme round-2 final, brotli: native <strong>${fmt(gX2.brotli.native)}</strong> · JS <strong>${fmt(gX2.brotli.js)}</strong> · managed <strong>${fmt(gX2.brotli.managed)}</strong> · HTML and data ${fmt(gX2.brotli.other)}. Each further saving needs an option the owner ruled out: no fork or custom build of the runtime, and the stock Blazor host and renderer stay.</p>
+  <h2 id="block-h">What holds the remaining bytes</h2>
+  <p class="intro">Extreme round-2 final, brotli: native <strong>${fmt(gX2.brotli.native)}</strong> · JS <strong>${fmt(gX2.brotli.js)}</strong> · managed <strong>${fmt(gX2.brotli.managed)}</strong> · HTML and data ${fmt(gX2.brotli.other)}. Going lower in any group needs an option that was ruled out for this work: a fork or custom build of the runtime, or replacing the stock Blazor host and renderer.</p>
   <div class="three prose">
     <div><h3>Native · ${fmt(gX2.brotli.native)}</h3><p>What is left is the Mono interpreter, GC, metadata loader, marshalling, emmalloc and libc. Going lower needs a <strong>custom runtime build</strong> (rejected).</p></div>
     <div><h3>JS · ${fmt(gX2.brotli.js)}</h3><p><code>dotnet.runtime.js</code> ${fmt(r2js(/^dotnet\.runtime\./))} (includes the jiterpreter), <code>blazor.webassembly.js</code> ${fmt(r2js(/^blazor\.webassembly\.js$/))}, <code>dotnet.native.js</code> ${fmt(r2js(/^dotnet\.native\.[a-z0-9]+\.js$/))}, <code>dotnet.js</code> ${fmt(r2js(/^dotnet\.js$/))}. Going lower needs <strong>changing the runtime or Blazor JS logic</strong> (rejected). Removing the jiterpreter exports made the check fail.</p></div>
     <div><h3>Managed · ${fmt(gX2.brotli.managed)}</h3><p>Compressed alone, CoreLib is ${fmt(R2_ALONE.coreLib)} and System.Text.Json ${fmt(R2_ALONE.stj)}. STJ goes only if JS interop stops using reflection-based JSON, which needs a <strong>custom host or renderer</strong> (rejected). DI, logging, options and configuration (about 45k) also need a custom host. A host bypass with <code>UnsafeAccessorType</code> was not measured.</p></div>
   </div>
-  <p class="callout">Native + JS + CoreLib + System.Text.Json alone (each compressed separately) are <strong data-check="floor">${fmt(floor2)}</strong> bytes. Reaching ${fmt(TARGET)} would need ${fmt(X2.brotli_total - TARGET)} more bytes saved, from parts that only a rejected option can touch.</p>
+  <p class="callout">Native + JS + CoreLib + System.Text.Json alone (each compressed separately) are <strong data-check="floor">${fmt(floor2)}</strong> bytes. These parts can only get smaller with one of the ruled-out options above.</p>
   <h3>If a runtime fork were allowed</h3>
   <p class="estimate"><strong>Estimates from research, not measurements.</strong> Native part: about 22–27K brotli less with different build flags on stock source, about 42–57K with small patches, about 60–95K with deep changes. With JS and CoreLib included: about 95–160K (small patches) to about 140–250K (deep changes). The cost: an own runtime pack that must be rebuilt on every monthly servicing release, late security fixes, and no vendor support.</p>
   <p class="intro">CoreCLR on wasm (<code>UseMonoRuntime=false</code>, round 1, run <code>${esc(CC.id)}</code>) publishes and passes the check, but it is <strong data-check="coreclr-delta">${sfmt(CC.delta_brotli)}</strong> bytes brotli vs Mono. Reverted.</p>
@@ -391,9 +381,9 @@ const allRuns = `
     <span class="count" id="f-count" aria-live="polite">${runs.length} of ${runs.length} runs</span>
   </div>
   <div class="tablewrap"><table class="num runs sortable" id="runs">
-  <thead><tr><th><button data-sort="text">Run</button></th><th><button data-sort="num">Round</button></th><th><button data-sort="text">Variant</button></th><th><button data-sort="text">Group</button></th><th class="chg">Change</th><th class="r"><button data-sort="num">Brotli</button></th><th class="r"><button data-sort="num">Δ vs base</button></th><th class="r"><button data-sort="num">vs target</button></th><th><button data-sort="text">Check</button></th><th><button data-sort="text">Decision</button></th></tr></thead>
+  <thead><tr><th><button data-sort="text">Run</button></th><th><button data-sort="num">Round</button></th><th><button data-sort="text">Variant</button></th><th><button data-sort="text">Group</button></th><th class="chg">Change</th><th class="r"><button data-sort="num">Brotli</button></th><th class="r"><button data-sort="num">Δ vs base</button></th><th class="r"><button data-sort="num">vs template</button></th><th><button data-sort="text">Check</button></th><th><button data-sort="text">Decision</button></th></tr></thead>
   <tbody>
-${runs.map((r, i) => `<tr class="run" tabindex="0" aria-expanded="false" data-i="${i}" data-round="${roundOf(r)}" data-variant="${esc(r.variant)}" data-group="${esc(r.group)}" data-decision="${esc(r.decision)}" data-check="${esc(r.check)}" data-q="${esc(searchText(r))}"><td data-v="${esc(r.id)}"><code>${esc(r.id)}</code></td><td data-v="${roundOf(r)}">${roundOf(r)}</td><td data-v="${esc(r.variant)}">${esc(VARIANT_LABEL[r.variant] || r.variant)}</td><td data-v="${esc(r.group)}">${esc(r.group)}</td><td class="chg">${esc(cleanChange(r.change))}</td><td class="r" data-v="${r.brotli_total ?? ''}">${fmt(r.brotli_total)}</td><td class="r" data-v="${r.delta_brotli ?? ''}">${sfmt(r.delta_brotli)}</td><td class="r" data-v="${r.distance_to_target ?? ''}">${sfmt(r.distance_to_target)}</td><td data-v="${esc(r.check)}">${checkPill(r.check)}</td><td data-v="${esc(r.decision)}">${decisionPill(r.decision)}</td></tr>`).join('\n')}
+${runs.map((r, i) => `<tr class="run" tabindex="0" aria-expanded="false" data-i="${i}" data-round="${roundOf(r)}" data-variant="${esc(r.variant)}" data-group="${esc(r.group)}" data-decision="${esc(r.decision)}" data-check="${esc(r.check)}" data-q="${esc(searchText(r))}"><td data-v="${esc(r.id)}"><code>${esc(r.id)}</code></td><td data-v="${roundOf(r)}">${roundOf(r)}</td><td data-v="${esc(r.variant)}">${esc(VARIANT_LABEL[r.variant] || r.variant)}</td><td data-v="${esc(r.group)}">${esc(r.group)}</td><td class="chg">${esc(cleanChange(r.change))}</td><td class="r" data-v="${r.brotli_total ?? ''}">${fmt(r.brotli_total)}</td><td class="r" data-v="${r.delta_brotli ?? ''}">${sfmt(r.delta_brotli)}</td><td class="r" data-v="${r.brotli_total != null ? r.brotli_total - B.brotli_total : ''}">${r.brotli_total != null ? sfmt(r.brotli_total - B.brotli_total) : '—'}</td><td data-v="${esc(r.check)}">${checkPill(r.check)}</td><td data-v="${esc(r.decision)}">${decisionPill(r.decision)}</td></tr>`).join('\n')}
   </tbody></table></div>
 </section>`;
 
@@ -446,12 +436,12 @@ const method = `
 
 // ---------- page ----------
 const CSS = String.raw`
-/* Layout: one reading column, max 72rem; verdict cards first, then charts, tables, method. */
+/* Layout: one reading column, max 72rem; savings first, then totals, charts, tables, method. */
 :root{
   --page:#f3f3ef; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#6c6a64;
   --grid:#e1e0d9; --axis:#c3c2b7; --line:rgba(11,11,11,.10); --hover:rgba(11,11,11,.04);
   --s-native:#2a78d6; --s-js:#eb6834; --s-managed:#1baf7a; --s-other:#eda100;
-  --save:#2a78d6; --grow:#eb6834; --target:#0b0b0b;
+  --save:#2a78d6; --grow:#eb6834;
   --ok:#006300; --ok-bg:rgba(12,163,12,.12); --bad:#b42f2f; --bad-bg:rgba(208,59,59,.12);
   --accent:#2a5bc4; --code-bg:rgba(11,11,11,.05);
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
@@ -461,14 +451,14 @@ const CSS = String.raw`
   --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9b998f;
   --grid:#2c2c2a; --axis:#4a4a46; --line:rgba(255,255,255,.10); --hover:rgba(255,255,255,.05);
   --s-native:#3987e5; --s-js:#d95926; --s-managed:#199e70; --s-other:#c98500;
-  --save:#3987e5; --grow:#d95926; --target:#f0efec;
+  --save:#3987e5; --grow:#d95926;
   --ok:#3fbf3f; --ok-bg:rgba(12,163,12,.18); --bad:#ef7b7b; --bad-bg:rgba(230,103,103,.18);
   --accent:#8fb0ff; --code-bg:rgba(255,255,255,.07); color-scheme:dark}}
 :root[data-theme="dark"]{
   --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9b998f;
   --grid:#2c2c2a; --axis:#4a4a46; --line:rgba(255,255,255,.10); --hover:rgba(255,255,255,.05);
   --s-native:#3987e5; --s-js:#d95926; --s-managed:#199e70; --s-other:#c98500;
-  --save:#3987e5; --grow:#d95926; --target:#f0efec;
+  --save:#3987e5; --grow:#d95926;
   --ok:#3fbf3f; --ok-bg:rgba(12,163,12,.18); --bad:#ef7b7b; --bad-bg:rgba(230,103,103,.18);
   --accent:#8fb0ff; --code-bg:rgba(255,255,255,.07); color-scheme:dark}
 *{box-sizing:border-box}
@@ -494,14 +484,11 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;overflow-wrap:an
 .pill.big{font-size:14px;padding:4px 12px}
 .tag{font-size:12px;padding:1px 7px;border-radius:4px;border:1px solid var(--line);white-space:nowrap}
 .tag.kept{font-weight:600;color:var(--ink)} .tag.rev{color:var(--ink2);text-decoration:line-through;text-decoration-color:var(--muted)} .tag.exp{color:var(--muted);border-style:dashed}
-/* verdict */
-.verdict{border-width:1px;border-color:var(--bad-bg);box-shadow:inset 0 0 0 1px var(--bad-bg)}
-.status{margin:0 0 8px}
+/* totals */
 .lead{font-size:17px;max-width:70ch}
-.vrow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:10px;align-items:stretch;margin:14px 0 10px}
+.vrow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:10px;align-items:stretch;margin:14px 0 10px}
 .arrow{align-self:center;color:var(--muted);font-size:18px}
 .vcard{border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:6px;min-width:0;background:var(--page)}
-.vcard.target{border-style:dashed}
 .vhead{display:flex;flex-direction:column}
 .vname{font-weight:700;font-size:15px} .vsub{font-size:12px;color:var(--muted)}
 .vnum{font-size:22px;font-weight:650;line-height:1.2} .unit{font-size:12px;font-weight:400;color:var(--muted)}
@@ -519,7 +506,7 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;overflow-wrap:an
 .lg{display:inline-flex;align-items:center;gap:6px}
 .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:4px}
 .s-native{background:var(--s-native)} .s-js{background:var(--s-js)} .s-managed{background:var(--s-managed)} .s-other{background:var(--s-other)}
-.sw.save{background:var(--save)} .sw.grow{background:var(--grow)} .sw.tline{width:2px;height:14px;border-radius:0;background:var(--target)}
+.sw.save{background:var(--save)} .sw.grow{background:var(--grow)}
 /* stacked chart */
 .stack{position:relative;padding:22px 0 4px;display:flex;flex-direction:column;gap:14px}
 .sgrid{position:absolute;top:0;bottom:0;left:var(--lab);right:var(--rpad);pointer-events:none}
@@ -527,8 +514,6 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;overflow-wrap:an
 .tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--grid)}
 .tick span{position:absolute;top:0;transform:translateX(-50%);font-size:11px;color:var(--muted);white-space:nowrap}
 .tick:first-child span{transform:none}
-.tgt{position:absolute;top:14px;bottom:0;border-left:2px solid var(--target);z-index:2}
-.tgt span{position:absolute;top:-14px;left:4px;font-size:11px;font-weight:600;color:var(--ink);white-space:nowrap}
 .srow{display:grid;grid-template-columns:var(--lab) 1fr;align-items:center;position:relative}
 .slabel{display:flex;flex-direction:column;padding-right:10px;min-width:0}
 .sname{font-weight:600;font-size:14px} .sid{font-size:11px;background:none;padding:0;color:var(--muted)}
@@ -750,17 +735,17 @@ function client() {
 }
 
 const dataJson = JSON.stringify(runs).replace(/</g, '\\u003c');
-const TITLE = '<title>Blazor WASM Size Experiments</title>\n';
-const DESC = '<meta name="description" content="Size experiments for a minimal Blazor WebAssembly app on .NET 11: what each setting saves, and why the 1,100,000-byte brotli target is not reached.">\n';
+const TITLE = '<title>Blazor WebAssembly minification on .NET 11: what each change saves</title>\n';
+const DESC = '<meta name="description" content="Ways to reduce the download size of a Blazor WebAssembly app on .NET 11, with the measured brotli bytes each build setting, post-processing step and code change saves.">\n';
 const STYLE = `<style>${CSS}</style>\n`;
 const body = `<div class="wrap">
 <header>
   <p class="eyebrow">.NET SDK 11.0.100 · stock Mono runtime · Release publish · ${runs.length} runs</p>
-  <h1>Blazor WebAssembly size experiments</h1>
+  <h1>Blazor WebAssembly minification on .NET 11: what each change saves</h1>
 </header>
-${verdict}
-${whereBytes}
 ${levers}
+${totals}
+${whereBytes}
 ${workload}
 ${tradeoffs}
 ${perFile}
@@ -782,7 +767,7 @@ body{margin:0} [hidden]{display:none!important} img{max-width:100%}
 </style>
 `;
 const navLinks = [`<a href="${esc(opts.home)}">← Demo home</a>`];
-if (opts.repo) navLinks.push(`<a href="${esc(opts.repo)}">README and source</a>`);
+if (opts.repo) navLinks.push(`<a href="${esc(opts.repo)}">Source and documentation</a>`);
 const standaloneHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>

@@ -30,7 +30,6 @@ for (const m of meta) {
     props: facts.props ?? null, post: facts.post ?? null, host: m.from ?? 'linux-host',
     raw_total: facts.raw_total ?? null, brotli_total: facts.brotli_total ?? null, gzip_total: facts.gzip_total ?? null, dir_raw_total: facts.dir_raw_total ?? null,
     delta_brotli: base?.brotli_total != null && facts.brotli_total != null ? facts.brotli_total - base.brotli_total : null,
-    distance_to_target: facts.brotli_total != null ? facts.brotli_total - 1100000 : null,
     files: facts.files ?? null, native_wasm_sha256: facts.native_wasm_sha256 ?? null, relinked: facts.relinked ?? null,
     check: facts.check ?? 'not-run', check_error: facts.check_error ?? null, build: facts.build ?? null, build_error: facts.build_error ?? null,
     decision: m.decision, reason: m.reason, parallel_wave: m.parallel_wave ?? null, duration_s: facts.duration_s ?? null,

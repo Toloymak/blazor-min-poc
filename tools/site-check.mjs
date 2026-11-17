@@ -17,6 +17,10 @@ p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); }); p.on('
 const r1 = await p.goto(origin + prefix); ok(r1.status() === 200, `landing 200`);
 ok(await p.locator('a[href="report.html"]').count() === 1, 'landing links to report.html');
 const r2 = await p.goto(origin + prefix + 'report.html'); ok(r2.status() === 200, 'report.html 200');
+await p.waitForLoadState('load');
+const bars = await p.locator('.lchart .lrow').count(), segs = await p.locator('.stack .seg').count();
+ok(bars > 0 && segs > 0, `report charts render (${bars} lever bars, ${segs} stacked segments)`);
+ok((await p.locator('h2').first().textContent()).startsWith('Ways to reduce'), `report starts with the ways to reduce the size`);
 if (mode === 'host') {
   const h = r2.headers();
   ok(h['content-encoding'] === 'br', `report.html served brotli (${h['content-encoding']})`);
