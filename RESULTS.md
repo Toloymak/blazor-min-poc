@@ -6,24 +6,28 @@ Two final variants are kept: **Honest** uses only stock Blazor APIs (all savings
 
 ## Ways to reduce the download size, and what each saves
 
-Brotli bytes saved by each change, measured against the run just before it (run ids are in `results/experiments.jsonl`):
+The biggest measured savings, in brotli bytes: the same list as at the top of the README. Each saving was measured alone
+(one setting on the default `Honest` app, run `h00-default`) or as one step on top of earlier steps (the run ids say which),
+so the savings do not add up exactly.
 
-| change | used in | brotli bytes saved | run |
-|---|---|---:|---|
-| Invariant globalization (no ICU data; the relink leaves ICU out of the native file) | Honest, Extreme | 661,194 | `h02-invglob` |
-| Own router and JS `fetch` instead of `Router` and `HttpClient` | Extreme | 137,828 | `e00-extreme` |
-| `EventSourceSupport=false` | Honest, Extreme | 96,951 | `h05-noeventsource` |
-| Bit.Minifier on the trimmed assemblies (+17,176 more in aggressive mode) | Honest, Extreme | 78,547 | `c-honest-bitmin` |
-| All assemblies in one bundle, compressed together | Extreme | 75,030 | `r2-b-group` |
-| Invariant time zones | Honest, Extreme | 63,341 | `h03-invtz` |
-| `MetricsSupport=false` | Honest, Extreme | 52,095 | `h09-nometrics` |
-| `DynamicCodeSupport=false` | Honest, Extreme | 30,502 | `c-honest-dyncode` |
-| Native relink without SIMD | Honest, Extreme | 28,098 | `h20-nosimd` |
-| terser on the JavaScript files | Honest, Extreme | 21,916 | `e04-minify` |
-| Metadata pass with Mono.Cecil (attributes, consts, property metadata) | Honest, Extreme | 20,134 | `r2-m-props-notasks` |
-| `wasm-opt` on `dotnet.native.wasm` | Honest, Extreme | 18,608 | `e03-wasmopt` |
-| Unused native runtime functions replaced by stubs (about 9.4k more for the AOT lookup functions) | Honest, Extreme | 14,597 | `r2-x-combo` |
+| way to reduce the download | brotli saved | run |
+|---|---:|---|
+| Native relink with the `wasm-tools` workload, plus the settings that need it | about 800k to 850k | `ab-honest-managed-norelink` → `f-honest` (801,173), `ab-extreme-managed-norelink` → `f-extreme` (853,392) |
+| `InvariantGlobalization=true` | 657,823 | `s-invglob` |
+| `Extreme` code changes: own router, HTTP through JS `fetch` | 137,828 | `e00-extreme` |
+| `EventSourceSupport=false` | 98,849 | `s-noeventsource` |
+| Bit.Minifier | 91,369 | `s-bitmin` |
+| One bundle file for all assemblies | 75,030 | `r2-b-group` |
+| `InvariantTimezone=true`, `BlazorEnableTimeZoneSupport=false` | 64,384 | `s-invtz` |
+| `MetricsSupport=false` | 50,418 | `s-nometrics` |
+| `DynamicCodeSupport=false` | 30,502 | `c-honest-dyncode` |
+| `WasmEnableSIMD=false` | 27,385 | `s-nosimd` |
+| Native function stubs | 23,337 | `r2-x-names` → `f2-extreme` |
+| terser on the JS files | 21,916 | `e04-minify` |
+| Mono.Cecil metadata pass | 20,134 | `r2-m-props-notasks` |
+| `wasm-opt -Oz` | 18,608 | `e03-wasmopt` |
 
+The same settings measured as a chain, each on top of the earlier ones, are in the tables below.
 Every other change that was tried, including the ones that did nothing or broke the app, is in the tables below.
 
 ## Totals against the template

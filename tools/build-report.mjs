@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { levers as headlineLevers } from './levers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -230,9 +231,16 @@ const nothing = runs.filter((r) => roundOf(r) === 1 && r.decision === 'reverted'
 const broke = runs.filter((r) => roundOf(r) === 1).filter((r) => r.build === 'failed' || (r.check === 'fail' && baseCheck(r) !== 'fail'));
 const inheritedFails = runs.filter((r) => roundOf(r) === 1 && r.check === 'fail' && baseCheck(r) === 'fail');
 const errText = (r) => r.build === 'failed' ? r.build_error : r.check_error;
+// headline list: same rows and numbers as the README lever table (tools/levers.mjs)
+const HEADLINE = headlineLevers(new Map(runs.map((r) => [r.id, r])));
 const levers = `
 <section aria-labelledby="lever-h">
   <h2 id="lever-h">Ways to reduce the download size, and what each one saves</h2>
+  <p class="intro">The biggest measured savings, in brotli bytes, the same list as at the top of the README. Each saving was measured alone or as one step on top of earlier steps (the run column names the runs), so the savings do not add up exactly.</p>
+  <div class="tablewrap"><table class="num"><thead><tr><th>Way to reduce the download</th><th class="r">Brotli saved</th><th>Run</th></tr></thead><tbody>
+  ${HEADLINE.map((w) => `<tr><td>${w.label}</td><td class="r">${esc(w.savedText)}</td><td><code>${esc(w.runText)}</code></td></tr>`).join('\n  ')}
+  </tbody></table></div>
+  <h3>Every kept run, by round</h3>
   <p class="intro">Measured brotli delta of each <strong>kept</strong> run against its <code>base</code> run. Longer bar = more bytes saved. A bar left of zero made the download bigger. Round 2 worked on Extreme only (Honest got the same post-processing, no code change).</p>
   <div class="tabs" role="tablist" aria-label="Lever set">${ALL_SETS.map((s, i) => `<button role="tab" id="tab-${s.key}" aria-controls="panel-${s.key}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${esc(s.label)}</button>`).join('')}</div>
   ${ALL_SETS.map((s, i) => `<div role="tabpanel" id="panel-${s.key}" aria-labelledby="tab-${s.key}"${i ? ' hidden' : ''}><p class="setnote">${esc(s.note)}</p><div class="legend"><span class="lg"><span class="sw save"></span>saved bytes</span><span class="lg"><span class="sw grow"></span>made it bigger</span></div>${leverChart(s.items)}</div>`).join('\n')}
