@@ -12,7 +12,7 @@ The list covers IL trimming with ILLink, feature switches such as `InvariantGlob
 the native relink with the `wasm-tools` workload, Bit.Minifier, `wasm-opt`, terser and a single bundle for all assemblies.
 Every size is given as raw bytes, brotli and gzip, so you see the real bundle size that a browser downloads.
 
-The same 3-page app (Home, Counter, Fetch) was built and measured in more than 160 configurations (161 logged runs).
+The same 3-page app (Home, Counter, Fetch) was built and measured in more than 160 configurations (161 experiment runs).
 Two final variants are kept: `Honest` and `Extreme`.
 
 ## How small can a Blazor WebAssembly app get on .NET 11?
@@ -21,15 +21,21 @@ The `dotnet new blazorwasm` template downloads **2,589,350** bytes with brotli.
 `Honest`, which keeps stock Blazor APIs, downloads **1,424,673** bytes: 1,164,677 fewer, 45.0% smaller.
 `Extreme` downloads **1,211,018** bytes: 1,378,332 fewer, 53.2% smaller.
 
+The live demo also carries a small hand-written stylesheet: 1,269 bytes raw, one inline `<style>` block in each `index.html`,
+element selectors only (no Razor or C# change), light and dark theme, system fonts. It adds 487 brotli bytes to `Honest`
+(1,425,160 in total) and 504 to `Extreme` (1,211,522).
+
 | Build | Raw bytes | Brotli | gzip -9 | Files | vs template (brotli) |
 |---|---:|---:|---:|---:|---:|
 | Template baseline (`dotnet new blazorwasm`) | 8,447,649 | 2,589,350 | — | 50 | — |
 | Issue #86601 recipe on .NET 11 | 5,404,848 | 1,735,678 | 2,091,866 | 43 | −853,672 |
 | `Honest`, round 1 | 4,616,080 | 1,519,331 | 1,823,357 | 43 | −1,070,019 |
 | `Extreme`, round 1 | 4,013,671 | 1,333,578 | 1,599,659 | 39 | −1,255,772 |
-| **`Honest`, final** | **4,243,612** | **1,424,673** | **1,706,941** | 43 | **−1,164,677** |
+| **`Honest`, recipe final (before page styles)** | **4,243,612** | **1,424,673** | **1,706,941** | 43 | **−1,164,677** |
 | `Honest` + bundle (experiment, not the default) | 4,240,357 | 1,344,434 | 1,675,892 | 8 | −1,244,916 |
-| **`Extreme`, final** | **3,851,361** | **1,211,018** | **1,507,342** | 8 | **−1,378,332** |
+| **`Extreme`, recipe final (before page styles)** | **3,851,361** | **1,211,018** | **1,507,342** | 8 | **−1,378,332** |
+| `Honest`, demo as served (with page styles) | 4,244,919 | 1,425,160 | 1,707,563 | 43 | −1,164,190 |
+| `Extreme`, demo as served (with page styles) | 3,852,665 | 1,211,522 | 1,507,960 | 8 | −1,377,828 |
 
 The issue #86601 row is a public recipe from dotnet/runtime, measured here on .NET 11.
 "—" means not measured or not needed.
@@ -379,12 +385,15 @@ It does nothing when `dotnet` and `node` are on `PATH`; it only adds a user-loca
 ./measure.sh artifacts/extreme extreme
 ```
 
-The `COLD-LOAD` line should show:
+The `COLD-LOAD` lines should show (this is the build with page styles; the first line is `honest`, the second `extreme`):
 
-| Variant | files | raw | brotli | gzip9 |
-|---|---:|---:|---:|---:|
-| `honest` | 43 | 4,243,612 | 1,424,673 | 1,706,941 |
-| `extreme` | 8 | 3,851,361 | 1,211,018 | 1,507,342 |
+```
+COLD-LOAD files=43 raw=4244919 brotli=1425160 gzip9=1707563
+COLD-LOAD files=8 raw=3852665 brotli=1211522 gzip9=1507960
+```
+
+Before the page styles were added, the same commands gave the recipe finals from the table at the top:
+`Honest` 4,243,612 raw / 1,424,673 brotli / 1,706,941 gzip, `Extreme` 3,851,361 / 1,211,018 / 1,507,342.
 
 **Note: the totals depend a little on where the build runs** (folder path and SDK location).
 The SDK puts a fingerprint into some file names (for example `dotnet.native.<fingerprint>.wasm`).
@@ -396,8 +405,9 @@ The names are written into the boot config inside `dotnet.js`, so the totals mov
 - The first CI build on a GitHub runner: `Honest` raw 4,243,654, brotli 1,425,104, gzip 1,707,048, 43 files (+431 brotli, +42 raw);
   `Extreme` raw 3,851,404, brotli 1,211,189, gzip 1,507,487, 8 files (+171 brotli, +43 raw). That is about 0.03% and 0.01%.
 
-The live demo shows the numbers of its own CI build, so they differ from this README by about that much.
-The tables in this README keep the measured local finals.
+Both comparisons are against the recipe finals before page styles: the CI numbers above were also measured before
+the page styles were added. The live demo now serves the styled build, so its numbers are those plus about 500 bytes.
+The tables in this README keep the measured local numbers.
 
 To serve the `.br` files with `Content-Encoding: br` during the check (the round-2 gate), set `SERVE_ENCODED=br`:
 
@@ -405,7 +415,7 @@ To serve the `.br` files with `Content-Encoding: br` during the check (the round
 SERVE_ENCODED=br ./measure.sh artifacts/extreme extreme
 ```
 
-It then also prints a `SERVED` line. `equal=true` means the transfer equals the sum of the `.br` files.
+It then also prints a `SERVED` line. For the build with page styles it ends with `transfer=1211522 sum-of-.br-files=1211522 equal=true`. `equal=true` means the transfer equals the sum of the `.br` files.
 
 **8. Optional: the stress page** for the native stubs:
 
@@ -438,6 +448,8 @@ Lost in `Extreme` on top of `Honest`:
 
 - No `@page` routing: no route templates, parameters or constraints, no `NotFound` page, no `FocusOnNavigate`,
   no `NavLink` active class, no lazy-loaded assemblies by route.
+- The page styles highlight the current page in the nav only in `Honest` (its `NavLink` adds `class="active"`).
+  In `Extreme` the links are plain `<a>` elements, so there is no highlight.
 - No `HttpClient` service and no `System.Net.Http`. HTTP only through JS interop.
 - Environment variables are not in `IConfiguration`. `appsettings.json` and `appsettings.{env}.json` are ignored.
 - `Console.Error` is null: if a root-component update fails, writing the error throws instead of printing.
@@ -500,6 +512,11 @@ No more ways were found with the stock runtime and the stock Blazor host. Native
 are already 988,053 bytes, and these parts need changes to the runtime or the host to get smaller.
 See [What stops a Blazor WebAssembly app from getting smaller](#what-stops-a-blazor-webassembly-app-from-getting-smaller).
 
+**How much does CSS add to a Blazor WebAssembly app?**
+About 500 brotli bytes here. The demo's hand-written stylesheet is 1,269 bytes raw, with no UI library and no web font.
+It adds 487 brotli bytes to `Honest` and 504 to `Extreme`. Inline in `index.html` it is about 25–30 bytes cheaper than
+a separate CSS file (517 and 528), measured with `tools/css-cost.mjs`.
+
 **Is CoreCLR on wasm smaller than Mono?**
 No. `UseMonoRuntime=false` works, but it is +422,347 brotli bigger than Mono.
 
@@ -521,6 +538,8 @@ No. `UseMonoRuntime=false` works, but it is +422,347 brotli bigger than Mono.
 | `tools/serve.mjs` | Static server for the check (SPA mode, Pages-like mode, `SERVE_ENCODED`). |
 | `tools/postprocess.mjs`, `tools/MetaStrip/`, `tools/wasmstub.mjs`, `tools/bundle.mjs`, `tools/compress.mjs` | The post-processing steps used by `build.sh`. |
 | `tools/stress/`, `tools/make-stress.sh`, `tools/stress.mjs` | The stress page for the native stubs (test copy only, never shipped). |
+| `tools/css-cost.mjs` | Cost of the page stylesheet: inline in `index.html` against a separate CSS file. |
+| `tools/shots.mjs` | Screenshots of the pages with the headless browser. |
 | `tools/step.sh`, `tools/matrix.sh`, `tools/run-steps.sh`, `steps/` | One measured experiment, many in parallel, and the experiment lists. |
 | `tools/collect.mjs`, `tools/result.mjs` | Write measured runs into `results/experiments.jsonl`. |
 | `tools/assemble-site.mjs`, `tools/pages-deeplink.mjs`, `tools/final.sh` | Build the demo site and check it under a sub-path. |
@@ -541,7 +560,8 @@ experiments on the Linux build machine; they need only the tools listed above.
 ## Full log and report page
 
 - [`RESULTS.md`](RESULTS.md): the written log of both rounds, with every error text.
-- [`results/experiments.jsonl`](results/experiments.jsonl): one JSON line per measured run (more than 160 runs), with settings, sizes,
+- [`results/experiments.jsonl`](results/experiments.jsonl): one JSON line per measured run (163 runs: the 161 experiment runs plus 2 page-style runs, `f3-honest-style` and `f3-extreme-style`,
+  with base runs `f2-honest` and `f2-extreme`), with settings, sizes,
   per-file sizes, check result, decision and reason. The raw trace files of each run were kept locally and are not published.
 
 The detailed report page (charts, all runs with filters, per-file tables) is made from the log:
@@ -550,5 +570,6 @@ The detailed report page (charts, all runs with filters, per-file tables) is mad
 node tools/build-report.mjs report.html
 ```
 
+It prints `wrote report.html (971716 bytes, 163 runs; scrubbed: none)`.
 The demo site has this page as `report.html` next to the landing page (`tools/assemble-site.mjs` calls the same script).
 `--standalone` is still accepted and does nothing.

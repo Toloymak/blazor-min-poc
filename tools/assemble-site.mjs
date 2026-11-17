@@ -83,37 +83,81 @@ const log = new Map(fs.readFileSync(path.join(root, 'results', 'experiments.json
   .map(l => JSON.parse(l)).map(o => [o.id, o]));
 const TEMPLATE = log.get('baseline')?.brotli_total ?? null;
 const WAYS = levers(log); // same rows and numbers as the lever table at the top of README.md
-const saving = (s, name) => s && TEMPLATE != null
-  ? `<strong>${name}</strong>: ${fmt(s.coldBr)} bytes brotli, ${fmt(TEMPLATE - s.coldBr)} fewer than the template (${(100 * (TEMPLATE - s.coldBr) / TEMPLATE).toFixed(1)}% smaller)`
-  : `<strong>${name}</strong>: n/a`;
-const row = (name, s) => `<tr><td><a href="${name}/">${name}</a></td><td>${fmt(s?.coldRaw)}</td><td>${fmt(s?.coldBr)}</td><td>${fmt(s?.coldGz)}</td><td>${s?.coldFiles ?? 'n/a'}</td></tr>`;
+// Recipe finals (the published numbers, before page styles) from the log; the demo as served comes from the sizes
+// json measured on this build (with the apps' page styles).
+const RECIPE = { honest: log.get('f2-honest')?.brotli_total ?? null, extreme: log.get('f2-extreme')?.brotli_total ?? null };
+const pctSmaller = v => TEMPLATE != null && v != null ? (100 * (TEMPLATE - v) / TEMPLATE).toFixed(1) : 'n/a';
+const plus = n => n == null ? 'n/a' : (n >= 0 ? '+' : '−') + fmt(Math.abs(n));
+const card = (name, s, blurb) => `<article class="v">
+<h2>${name}</h2>
+<p class="big">${fmt(RECIPE[name.toLowerCase()])}<span>bytes brotli, recipe final</span></p>
+<p class="pct">${pctSmaller(RECIPE[name.toLowerCase()])}% smaller than the template</p>
+<p class="m">${blurb}</p>
+<p class="m">Demo as served, with page styles: ${fmt(s?.coldBr)} (${plus(s && RECIPE[name.toLowerCase()] != null ? s.coldBr - RECIPE[name.toLowerCase()] : null)} bytes)</p>
+<a class="btn" href="${name.toLowerCase()}/">Open ${name}</a>
+</article>`;
+// bar widths as classes (no style= attributes: the host CSP allows only the hashed <style> block)
+const maxSave = Math.max(...WAYS.map(w => w.saved));
+const barCls = w => 'w' + Math.max(1, Math.round(100 * w.saved / maxSave));
+const barCss = [...new Set(WAYS.map(barCls))].map(c => `.${c}{width:${c.slice(1)}%}`).join('');
+const row = (label, raw, brv, gzv, files) => `<tr><td>${label}</td><td>${fmt(raw)}</td><td>${fmt(brv)}</td><td>${fmt(gzv)}</td><td>${files ?? 'n/a'}</td></tr>`;
 const served = host === 'pages'
   ? 'This demo on GitHub Pages is served with gzip (Pages does not send brotli), so the transfer here is close to the gzip column.'
   : 'This host sends the build\'s own brotli files (quality 11) when the browser accepts brotli, so the transfer here is the brotli column.';
+const fh = log.get('f2-honest'), fx = log.get('f2-extreme'), tb = log.get('baseline');
 let landing = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Blazor WebAssembly minification on .NET 11</title>
-<style>body{font:16px/1.5 system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 16px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ccc;padding:.3rem .5rem;text-align:right}td:first-child,th:first-child{text-align:left}</style>
+<style>:root{color-scheme:light dark;--p:light-dark(#f7f5f0,#17161b);--i:light-dark(#1c1b21,#ecebf1);--m:light-dark(#5e5b66,#a7a3b2);--l:light-dark(#dbd6cc,#34323c);--a:light-dark(#512bd4,#a993f5);--n:ui-monospace,monospace}
+body{margin:0 auto;max-width:60rem;padding:2.5rem 1rem 5rem;background:var(--p);color:var(--i);font:1.0625rem/1.6 system-ui,sans-serif}
+a{color:var(--a)}:focus-visible{outline:2px solid var(--a);outline-offset:3px}
+h1{font-size:clamp(2rem,5vw,3rem);line-height:1.1;letter-spacing:-.025em;margin:0 0 1rem;max-width:20ch}
+.lead{font-size:1.1875rem;color:var(--m);max-width:42rem;margin:0 0 2.5rem}
+h2{font-size:1.375rem;letter-spacing:-.01em;margin:3.5rem 0 .75rem}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem 3rem;border-top:1px solid var(--l)}
+.v h2{margin:1.5rem 0 .25rem;font-size:1rem;color:var(--m);font-weight:600}
+.big{font:600 clamp(2.5rem,6vw,3.5rem)/1 var(--n);font-variant-numeric:tabular-nums;letter-spacing:-.03em;margin:0}
+.big span{display:block;font:400 .875rem system-ui,sans-serif;color:var(--m);letter-spacing:0;margin-top:.5rem}
+.pct{font:600 1.125rem var(--n);color:var(--a);margin:.75rem 0}
+.m{color:var(--m);font-size:.9375rem;margin:.25rem 0}
+.btn{display:inline-block;margin-top:1rem;padding:.55rem 1.25rem;border-radius:.375rem;background:var(--a);color:var(--p);font-weight:600;text-decoration:none}
+.note{color:var(--m);font-size:.9375rem;max-width:44rem}
+ol{list-style:none;padding:0;margin:0;border-top:1px solid var(--l)}
+li{display:grid;grid-template-columns:minmax(0,1fr) 9.5rem;gap:.25rem 1.5rem;padding:.6rem 0;border-bottom:1px solid var(--l);align-items:center}
+li b{font:600 1rem var(--n);font-variant-numeric:tabular-nums;text-align:right}
+li i{grid-column:1/-1;display:block;height:.375rem;background:var(--l);border-radius:1px}
+li i>s{display:block;height:100%;background:var(--a)}
+code{font:.9em var(--n)}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:.5rem .75rem .5rem 0;border-bottom:1px solid var(--l);text-align:right;white-space:nowrap}
+th{font-weight:600;font-size:.875rem;color:var(--m)}th:first-child,td:first-child{text-align:left;white-space:normal}
+td{font-family:var(--n);font-size:.9375rem}td:first-child{font-family:inherit}
+footer{margin-top:4rem;padding-top:1rem;border-top:1px solid var(--l);display:flex;gap:2rem;flex-wrap:wrap}
+${barCss}</style>
 </head><body>
 <h1>Blazor WebAssembly minification on .NET 11</h1>
-<p>${saving(SH, 'Honest')}.<br>${saving(SE, 'Extreme')}.</p>
+<p class="lead">The same three-page Blazor WebAssembly app, built and measured in more than 160 configurations. Two final variants are kept. The template downloads ${fmt(TEMPLATE)} bytes brotli.</p>
+<section class="cards">
+${card('Honest', SH, 'Stock Blazor APIs only. All savings come from build settings and post-processing.')}
+${card('Extreme', SE, 'Also changes code: its own router, HTTP through JS <code>fetch</code>, one bundle for all assemblies.')}
+</section>
 <h2>Ways to reduce the download size</h2>
-<p>The biggest measured savings, in brotli bytes (same 3-page app, .NET 11, stock runtime). Each saving was measured alone
-or as one step on top of earlier steps, so the savings do not add up exactly. The ${repo ? `<a href="${repo}#how-to-reduce-blazor-webassembly-download-size">README</a>` : 'README'} has the details.
-Honest uses only stock Blazor APIs; Extreme also changes code.</p>
-<table><tr><th>Way to reduce the download</th><th>Brotli saved</th></tr>
-${WAYS.map(w => `<tr><td>${w.label}</td><td>${w.savedText}</td></tr>`).join('\n')}
-</table>
+<p class="note">Brotli bytes each change saved. Each saving was measured alone or as one step on top of earlier steps, so the savings do not add up exactly. The ${repo ? `<a href="${repo}#how-to-reduce-blazor-webassembly-download-size">README</a>` : 'README'} has the details.</p>
+<ol>
+${WAYS.map(w => `<li><span>${w.label}</span><b>${w.savedText}</b><i><s class="${barCls(w)}"></s></i></li>`).join('\n')}
+</ol>
 <h2>Totals</h2>
-<table><tr><th>Variant</th><th>Cold load raw bytes</th><th>brotli -q 11</th><th>gzip -9</th><th>Files</th></tr>
-<tr><td>template (<code>dotnet new blazorwasm</code>)</td><td>${fmt(log.get('baseline')?.raw_total)}</td><td>${fmt(TEMPLATE)}</td><td>n/a</td><td>${log.get('baseline')?.files?.length ?? 'n/a'}</td></tr>
-${row('honest', SH)}
-${row('extreme', SE)}
-</table>
-<p>Sizes are the files a headless browser downloads on a cold load of all pages, measured by <code>measure.sh</code>
-on the build made by <code>build.sh</code> (before this page and the apps' <code>&lt;base href&gt;</code>${host === 'pages' ? ' and robots meta tag' : ''} were adjusted for this site).</p>
-<p>${served}</p>
-<p><a href="report.html">Detailed report of every measured run</a>${repo ? ` · <a href="${repo}">Source and documentation</a>` : ''}</p>
+<p class="note">Files a headless browser downloads on a cold load of all pages, measured by <code>measure.sh</code>. "Recipe final" is the build before page styles; "demo as served" is this site's apps with their page styles (${host === 'pages' ? 'the robots meta tag and ' : ''}the per-app <code>&lt;base href&gt;</code> are added after measuring).</p>
+<div class="tw"><table>
+<tr><th>Build</th><th>Raw</th><th>Brotli</th><th>Gzip -9</th><th>Files</th></tr>
+${row('Template (<code>dotnet new blazorwasm</code>)', tb?.raw_total, TEMPLATE, null, tb?.files?.length)}
+${row('Honest, recipe final', fh?.raw_total, fh?.brotli_total, fh?.gzip_total, fh?.files?.length)}
+${row('Honest, demo as served, with page styles', SH?.coldRaw, SH?.coldBr, SH?.coldGz, SH?.coldFiles)}
+${row('Extreme, recipe final', fx?.raw_total, fx?.brotli_total, fx?.gzip_total, fx?.files?.length)}
+${row('Extreme, demo as served, with page styles', SE?.coldRaw, SE?.coldBr, SE?.coldGz, SE?.coldFiles)}
+</table></div>
+<p class="note">${served}</p>
+<footer><a href="report.html">Detailed report of every measured run</a>${repo ? `<a href="${repo}">Source and documentation</a>` : ''}</footer>
 </body></html>
 `;
 if (host === 'pages') landing = injectMeta('index.html (landing)', landing);
@@ -135,7 +179,11 @@ if (host === 'appservice') {
       if (/type\s*=\s*"application\/json"/.test(m[1])) continue; // data block, never executed
       hashes.push(`'sha256-${crypto.createHash('sha256').update(m[2]).digest('base64')}'`);
     }
-    return `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'${hashes.length ? ' ' + hashes.join(' ') : ''}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'`;
+    // styles: hashes of the <style> blocks; a page that still uses style="" attributes (the report's charts)
+    // keeps 'unsafe-inline' for styles (with a hash in the list, browsers would ignore 'unsafe-inline')
+    const styleHashes = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => `'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`);
+    const styleSrc = /\sstyle="/.test(html) ? "'self' 'unsafe-inline'" : `'self'${styleHashes.length ? ' ' + styleHashes.join(' ') : ''}`;
+    return `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'${hashes.length ? ' ' + hashes.join(' ') : ''}; style-src ${styleSrc}; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'`;
   };
   for (const f of ['index.html', 'report.html', 'honest/index.html', 'extreme/index.html'])
     csp['/' + f] = policy(fs.readFileSync(path.join(out, f), 'utf8'));

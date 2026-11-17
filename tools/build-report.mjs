@@ -126,13 +126,15 @@ const B = get(IDS.baseline), R = get(IDS.recipe), H = get(IDS.honest), X = get(I
 const H2 = get(IDS.honest2), X2 = get(IDS.extreme2), HB = get(IDS.honestBundle);
 const gX2 = groupSums(X2);
 const roundLine = (r1, r2, kind) => `<p class="rline">Round 1 <span data-check="${kind}-r1">${fmt(r1.brotli_total)}</span> → round 2 <strong>${fmt(r2.brotli_total)}</strong> <span class="muted">(${sfmt(r2.brotli_total - r1.brotli_total)})</span></p>`;
+// the demo as served adds the apps' page styles (hand-written CSS) on top of the recipe final
+const styledLine = (id, r2) => { const st = byId.get(id); return st && st.brotli_total != null ? `<p class="rline">Demo as served, with page styles: <strong>${fmt(st.brotli_total)}</strong> <span class="muted">(${sfmt(st.brotli_total - r2.brotli_total)} bytes, run <code>${esc(id)}</code>)</span></p>` : ''; };
 
 // ---------- 2. totals against the template ----------
 function card(kind, title, sub, r, extra) {
   const saved = B.brotli_total - r.brotli_total;
   return `<div class="vcard ${kind}">
   <div class="vhead"><span class="vname">${title}</span><span class="vsub">${sub}</span></div>
-  <div class="vnum"><span data-check="${kind}-brotli">${fmt(r.brotli_total)}</span> <span class="unit">bytes brotli</span></div>
+  <div class="vnum"><span data-check="${kind}-brotli">${fmt(r.brotli_total)}</span> <span class="unit">bytes brotli${kind === 'baseline' ? '' : ', recipe final'}</span></div>
   <div class="vmeta">${mb(r.brotli_total)} · raw <span data-check="${kind}-raw">${fmt(r.raw_total)}</span>${r.gzip_total != null ? ` · gzip <span data-check="${kind}-gzip">${fmt(r.gzip_total)}</span>` : ''}</div>
   <dl class="vgap">
     ${kind === 'baseline' ? '<div><dt>Saved vs baseline</dt><dd>—</dd></div>' : `<div><dt>Saved vs baseline</dt><dd>${fmt(saved)} <span class="muted">(${pct(saved, B.brotli_total)})</span></dd></div>`}
@@ -146,9 +148,9 @@ const totals = `
   <div class="vrow">
     ${card('baseline', 'Baseline', '<code>dotnet new blazorwasm</code>', B)}
     <span class="arrow" aria-hidden="true">→</span>
-    ${card('honest', 'Honest', 'stock APIs: host builder, <code>Router</code>, <code>HttpClient</code>; round-2 post-processing, no code change', H2, roundLine(H, H2, 'honest') + `<p class="rline">Honest + bundle (experiment, not default): <span data-check="honest-bundle">${fmt(HB.brotli_total)}</span></p>`)}
+    ${card('honest', 'Honest', 'stock APIs: host builder, <code>Router</code>, <code>HttpClient</code>; round-2 post-processing, no code change', H2, roundLine(H, H2, 'honest') + styledLine('f3-honest-style', H2) + `<p class="rline">Honest + bundle (experiment, not default): <span data-check="honest-bundle">${fmt(HB.brotli_total)}</span></p>`)}
     <span class="arrow" aria-hidden="true">→</span>
-    ${card('extreme', 'Extreme', 'own router, JS <code>fetch</code>, ILLink stubs, one assembly bundle, native stubs, <code>wasm-opt</code>, terser', X2, roundLine(X, X2, 'extreme'))}
+    ${card('extreme', 'Extreme', 'own router, JS <code>fetch</code>, ILLink stubs, one assembly bundle, native stubs, <code>wasm-opt</code>, terser', X2, roundLine(X, X2, 'extreme') + styledLine('f3-extreme-style', X2))}
   </div>
   <p class="fineprint">For comparison: the minimal recipe from <a href="https://github.com/dotnet/runtime/issues/86601">dotnet/runtime #86601</a> (empty template, no <code>HttpClient</code>, invariant globalization) measures <strong data-check="recipe-brotli">${fmt(R.brotli_total)}</strong> bytes with this metric on .NET 11.</p>
   <p class="fineprint">Bytes = sum of the files a browser downloads on a cold first load plus a visit to every page, compressed with brotli quality 11. From round 2 on, the app is served from the final <code>.br</code> files with <code>Content-Encoding: br</code>, and the bytes transferred equal the sum of the <code>.br</code> files (the round-1 Extreme final gives the same ${fmt(get('r2-base-br').brotli_total)} bytes both ways, run <code>r2-base-br</code>). .NET SDK 11.0.100, stock Mono runtime, Release publish. 1 MB = 1,000,000 bytes, 1 kB = 1,000 bytes.</p>
@@ -446,37 +448,38 @@ const method = `
 const CSS = String.raw`
 /* Layout: one reading column, max 72rem; savings first, then totals, charts, tables, method. */
 :root{
-  --page:#f3f3ef; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#6c6a64;
-  --grid:#e1e0d9; --axis:#c3c2b7; --line:rgba(11,11,11,.10); --hover:rgba(11,11,11,.04);
+  --page:#f7f5f0; --surface:#f7f5f0; --ink:#1c1b21; --ink2:#4b4953; --muted:#5e5b66;
+  --grid:#e6e2d9; --axis:#c9c3b6; --line:#dbd6cc; --hover:rgba(81,43,212,.05);
   --s-native:#2a78d6; --s-js:#eb6834; --s-managed:#1baf7a; --s-other:#eda100;
-  --save:#2a78d6; --grow:#eb6834;
+  --save:#512bd4; --grow:#c2410c;
   --ok:#006300; --ok-bg:rgba(12,163,12,.12); --bad:#b42f2f; --bad-bg:rgba(208,59,59,.12);
-  --accent:#2a5bc4; --code-bg:rgba(11,11,11,.05);
-  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --accent:#512bd4; --code-bg:rgba(28,27,33,.05);
+  --sans:system-ui,sans-serif;
+  --mono:ui-monospace,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9b998f;
-  --grid:#2c2c2a; --axis:#4a4a46; --line:rgba(255,255,255,.10); --hover:rgba(255,255,255,.05);
+  --page:#17161b; --surface:#17161b; --ink:#ecebf1; --ink2:#c9c6d2; --muted:#a7a3b2;
+  --grid:#2b2a32; --axis:#4a4754; --line:#34323c; --hover:rgba(169,147,245,.07);
   --s-native:#3987e5; --s-js:#d95926; --s-managed:#199e70; --s-other:#c98500;
-  --save:#3987e5; --grow:#d95926;
+  --save:#a993f5; --grow:#f08a5d;
   --ok:#3fbf3f; --ok-bg:rgba(12,163,12,.18); --bad:#ef7b7b; --bad-bg:rgba(230,103,103,.18);
-  --accent:#8fb0ff; --code-bg:rgba(255,255,255,.07); color-scheme:dark}}
+  --accent:#a993f5; --code-bg:rgba(255,255,255,.07); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --page:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9b998f;
-  --grid:#2c2c2a; --axis:#4a4a46; --line:rgba(255,255,255,.10); --hover:rgba(255,255,255,.05);
+  --page:#17161b; --surface:#17161b; --ink:#ecebf1; --ink2:#c9c6d2; --muted:#a7a3b2;
+  --grid:#2b2a32; --axis:#4a4754; --line:#34323c; --hover:rgba(169,147,245,.07);
   --s-native:#3987e5; --s-js:#d95926; --s-managed:#199e70; --s-other:#c98500;
-  --save:#3987e5; --grow:#d95926;
+  --save:#a993f5; --grow:#f08a5d;
   --ok:#3fbf3f; --ok-bg:rgba(12,163,12,.18); --bad:#ef7b7b; --bad-bg:rgba(230,103,103,.18);
-  --accent:#8fb0ff; --code-bg:rgba(255,255,255,.07); color-scheme:dark}
+  --accent:#a993f5; --code-bg:rgba(255,255,255,.07); color-scheme:dark}
 *{box-sizing:border-box}
-body{background:var(--page);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
-.wrap{max-width:72rem;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:28px}
-header .eyebrow{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0}
-h1{font-size:clamp(26px,4vw,34px);line-height:1.15;margin:4px 0 0;text-wrap:balance;letter-spacing:-.01em}
-h2{font-size:21px;margin:0 0 6px;text-wrap:balance}
+body{background:var(--page);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55}
+.num,td.r,.lval,.vnum,.stotal{font-variant-numeric:tabular-nums}
+.wrap{max-width:72rem;margin:0 auto;padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:40px}
+header .eyebrow{font-size:14px;color:var(--muted);margin:0}
+h1{font-size:clamp(32px,5vw,48px);line-height:1.1;margin:6px 0 0;text-wrap:balance;letter-spacing:-.025em;max-width:24ch}
+h2{font-size:24px;margin:0 0 10px;text-wrap:balance;letter-spacing:-.01em}
 h3{font-size:15px;margin:14px 0 6px}
-section{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding-block:20px;padding-inline:clamp(14px,3vw,24px);min-width:0}
+section{background:none;border:0;border-top:1px solid var(--line);border-radius:0;padding-block:24px 0;padding-inline:0;min-width:0}
 p{margin:0 0 10px} .intro{color:var(--ink2);max-width:68ch}
 a{color:var(--accent)}
 code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.05em .3em;border-radius:4px;overflow-wrap:anywhere}
@@ -499,7 +502,7 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;overflow-wrap:an
 .vcard{border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:6px;min-width:0;background:var(--page)}
 .vhead{display:flex;flex-direction:column}
 .vname{font-weight:700;font-size:15px} .vsub{font-size:12px;color:var(--muted)}
-.vnum{font-size:22px;font-weight:650;line-height:1.2} .unit{font-size:12px;font-weight:400;color:var(--muted)}
+.vnum{font:600 30px/1.15 var(--mono);letter-spacing:-.02em} .unit{font-size:12px;font-weight:400;color:var(--muted)}
 .vmeta{font-size:12.5px;color:var(--ink2)}
 .vgap{margin:4px 0 0;display:flex;flex-direction:column;gap:4px;font-size:13px}
 .vgap div{display:flex;flex-direction:column} .vgap dt{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)} .vgap dd{margin:0;font-weight:600}

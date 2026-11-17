@@ -12,7 +12,7 @@ La liste couvre le trimming IL avec ILLink, les feature switches comme `Invarian
 le relink natif avec le workload `wasm-tools`, Bit.Minifier, `wasm-opt`, terser et un bundle unique pour tous les assemblys.
 Chaque taille est donnée en octets bruts, en brotli et en gzip : vous voyez la vraie taille du bundle que le navigateur télécharge.
 
-La même application de 3 pages (Home, Counter, Fetch) a été construite et mesurée dans plus de 160 configurations (161 exécutions dans le journal).
+La même application de 3 pages (Home, Counter, Fetch) a été construite et mesurée dans plus de 160 configurations (161 exécutions d'expérience).
 Deux variantes finales sont conservées : `Honest` et `Extreme`.
 
 ## Taille minimale d'une application Blazor WebAssembly sous .NET 11
@@ -21,15 +21,21 @@ Le modèle `dotnet new blazorwasm` télécharge **2 589 350** octets en brotli
 `Honest`, qui garde les API Blazor standard, télécharge **1 424 673** octets : 1 164 677 de moins, soit 45,0 % plus petit.
 `Extreme` télécharge **1 211 018** octets : 1 378 332 de moins, soit 53,2 % plus petit.
 
+La démo en ligne a aussi une petite feuille de style écrite à la main : 1 269 octets bruts, un seul bloc `<style>` intégré dans chaque `index.html`,
+uniquement des sélecteurs d'éléments (aucun changement Razor ni C#), thème clair et sombre, polices système. Elle ajoute 487 octets brotli à `Honest`
+(1 425 160 au total) et 504 à `Extreme` (1 211 522).
+
 | Build | Octets bruts | Brotli | gzip -9 | Fichiers | Écart avec le modèle (brotli) |
 |---|---:|---:|---:|---:|---:|
 | Modèle de départ (`dotnet new blazorwasm`) | 8 447 649 | 2 589 350 | — | 50 | — |
 | Recette de l'issue #86601 sous .NET 11 | 5 404 848 | 1 735 678 | 2 091 866 | 43 | −853 672 |
 | `Honest`, tour 1 | 4 616 080 | 1 519 331 | 1 823 357 | 43 | −1 070 019 |
 | `Extreme`, tour 1 | 4 013 671 | 1 333 578 | 1 599 659 | 39 | −1 255 772 |
-| **`Honest`, final** | **4 243 612** | **1 424 673** | **1 706 941** | 43 | **−1 164 677** |
+| **`Honest`, final de la recette (avant les styles de page)** | **4 243 612** | **1 424 673** | **1 706 941** | 43 | **−1 164 677** |
 | `Honest` + bundle (expérience, pas le réglage par défaut) | 4 240 357 | 1 344 434 | 1 675 892 | 8 | −1 244 916 |
-| **`Extreme`, final** | **3 851 361** | **1 211 018** | **1 507 342** | 8 | **−1 378 332** |
+| **`Extreme`, final de la recette (avant les styles de page)** | **3 851 361** | **1 211 018** | **1 507 342** | 8 | **−1 378 332** |
+| `Honest`, démo telle que servie (avec styles de page) | 4 244 919 | 1 425 160 | 1 707 563 | 43 | −1 164 190 |
+| `Extreme`, démo telle que servie (avec styles de page) | 3 852 665 | 1 211 522 | 1 507 960 | 8 | −1 377 828 |
 
 La ligne de l'issue #86601 est une recette publique de dotnet/runtime, mesurée ici sous .NET 11.
 « — » signifie : non mesuré ou sans objet.
@@ -379,12 +385,15 @@ Ce script ne fait rien quand `dotnet` et `node` sont dans le `PATH` ; il ajoute 
 ./measure.sh artifacts/extreme extreme
 ```
 
-La ligne `COLD-LOAD` doit afficher :
+Les lignes `COLD-LOAD` doivent afficher (c'est le build avec les styles de page ; la première ligne est `honest`, la seconde `extreme`) :
 
-| Variante | files | raw | brotli | gzip9 |
-|---|---:|---:|---:|---:|
-| `honest` | 43 | 4 243 612 | 1 424 673 | 1 706 941 |
-| `extreme` | 8 | 3 851 361 | 1 211 018 | 1 507 342 |
+```
+COLD-LOAD files=43 raw=4244919 brotli=1425160 gzip9=1707563
+COLD-LOAD files=8 raw=3852665 brotli=1211522 gzip9=1507960
+```
+
+Avant l'ajout des styles de page, les mêmes commandes donnaient les finales de la recette du tableau du début :
+`Honest` 4 243 612 en brut / 1 424 673 en brotli / 1 706 941 en gzip, `Extreme` 3 851 361 / 1 211 018 / 1 507 342.
 
 **Remarque : les totaux dépendent un peu de l'endroit où le build tourne** (chemin du dossier et emplacement du SDK).
 Le SDK ajoute une empreinte (fingerprint) dans le nom de certains fichiers (par exemple `dotnet.native.<fingerprint>.wasm`).
@@ -396,8 +405,9 @@ Les noms sont écrits dans la boot config à l'intérieur de `dotnet.js` : les t
 - Le premier build CI sur un runner GitHub : `Honest` brut 4 243 654, brotli 1 425 104, gzip 1 707 048, 43 fichiers (+431 en brotli, +42 en brut) ;
   `Extreme` brut 3 851 404, brotli 1 211 189, gzip 1 507 487, 8 fichiers (+171 en brotli, +43 en brut). Soit environ 0,03 % et 0,01 %.
 
-La démo en ligne montre les chiffres de son propre build CI : ils diffèrent donc de ce README d'à peu près autant.
-Les tableaux de ce README gardent les finales mesurées en local.
+Les deux comparaisons portent sur les finales de la recette avant les styles de page : les chiffres CI ci-dessus ont eux aussi été mesurés
+avant l'ajout des styles. La démo en ligne sert maintenant le build avec styles : ses chiffres sont donc ceux-ci plus environ 500 octets.
+Les tableaux de ce README gardent les chiffres mesurés en local.
 
 Pour servir les fichiers `.br` avec `Content-Encoding: br` pendant la vérification (le contrôle du tour 2), définissez `SERVE_ENCODED=br` :
 
@@ -405,7 +415,7 @@ Pour servir les fichiers `.br` avec `Content-Encoding: br` pendant la vérificat
 SERVE_ENCODED=br ./measure.sh artifacts/extreme extreme
 ```
 
-Une ligne `SERVED` s'affiche alors aussi. `equal=true` signifie que le transfert est égal à la somme des fichiers `.br`.
+Une ligne `SERVED` s'affiche alors aussi. Pour le build avec les styles de page, elle se termine par `transfer=1211522 sum-of-.br-files=1211522 equal=true`. `equal=true` signifie que le transfert est égal à la somme des fichiers `.br`.
 
 **8. Facultatif : la page de stress** pour les stubs natifs :
 
@@ -438,6 +448,8 @@ Ce qu'`Extreme` perd en plus de `Honest` :
 
 - Pas de routage `@page` : pas de modèles de routes, de paramètres ni de contraintes, pas de page `NotFound`, pas de `FocusOnNavigate`,
   pas de classe active sur `NavLink`, pas de chargement différé d'assemblys par route.
+- Les styles de page mettent en évidence la page courante dans le menu seulement dans `Honest` (son `NavLink` ajoute `class="active"`).
+  Dans `Extreme`, les liens sont de simples éléments `<a>` : il n'y a donc pas de mise en évidence.
 - Pas de service `HttpClient` ni de `System.Net.Http`. HTTP uniquement via l'interop JS.
 - Les variables d'environnement ne sont pas dans `IConfiguration`. `appsettings.json` et `appsettings.{env}.json` sont ignorés.
 - `Console.Error` vaut null : si la mise à jour d'un composant racine échoue, l'écriture de l'erreur lève une exception au lieu de l'afficher.
@@ -500,6 +512,11 @@ Aucun autre moyen n'a été trouvé avec le runtime standard et l'hôte Blazor s
 pèsent déjà 988 053 octets à eux seuls, et ces parties demandent des changements dans le runtime ou l'hôte pour devenir plus petites.
 Voir [Ce qui empêche une application Blazor WebAssembly de devenir plus petite](#ce-qui-empêche-une-application-blazor-webassembly-de-devenir-plus-petite).
 
+**Combien le CSS ajoute-t-il à une application Blazor WebAssembly ?**
+Ici, environ 500 octets brotli. La feuille de style de la démo est écrite à la main et pèse 1 269 octets bruts, sans bibliothèque UI ni police web.
+Elle ajoute 487 octets brotli à `Honest` et 504 à `Extreme`. Intégrée dans `index.html`, elle coûte environ 25–30 octets de moins
+qu'un fichier CSS séparé (517 et 528), mesuré avec `tools/css-cost.mjs`.
+
 **CoreCLR sur wasm est-il plus petit que Mono ?**
 Non. `UseMonoRuntime=false` fonctionne, mais pèse +422 347 de plus en brotli que Mono.
 
@@ -521,6 +538,8 @@ Non. `UseMonoRuntime=false` fonctionne, mais pèse +422 347 de plus en brotli q
 | `tools/serve.mjs` | Serveur statique pour la vérification (mode SPA, mode proche de Pages, `SERVE_ENCODED`). |
 | `tools/postprocess.mjs`, `tools/MetaStrip/`, `tools/wasmstub.mjs`, `tools/bundle.mjs`, `tools/compress.mjs` | Les étapes de post-traitement utilisées par `build.sh`. |
 | `tools/stress/`, `tools/make-stress.sh`, `tools/stress.mjs` | La page de stress pour les stubs natifs (copie de test uniquement, jamais publiée). |
+| `tools/css-cost.mjs` | Coût de la feuille de style : intégrée dans `index.html` contre un fichier CSS séparé. |
+| `tools/shots.mjs` | Captures d'écran des pages avec le navigateur headless. |
 | `tools/step.sh`, `tools/matrix.sh`, `tools/run-steps.sh`, `steps/` | Une expérience mesurée, plusieurs en parallèle, et les listes d'expériences. |
 | `tools/collect.mjs`, `tools/result.mjs` | Écrivent les exécutions mesurées dans `results/experiments.jsonl`. |
 | `tools/assemble-site.mjs`, `tools/pages-deeplink.mjs`, `tools/final.sh` | Construisent le site de démo et le vérifient sous un sous-chemin. |
@@ -541,7 +560,8 @@ aux expériences sur la machine de build Linux ; ils n'ont besoin que des outils
 ## Journal complet et page de rapport
 
 - [`RESULTS.md`](RESULTS.md) : le journal écrit des deux tours, avec chaque texte d'erreur.
-- [`results/experiments.jsonl`](results/experiments.jsonl) : une ligne JSON par exécution mesurée (plus de 160 exécutions), avec les réglages, les tailles,
+- [`results/experiments.jsonl`](results/experiments.jsonl) : une ligne JSON par exécution mesurée (163 exécutions : les 161 exécutions d'expérience plus 2 exécutions avec styles de page, `f3-honest-style` et `f3-extreme-style`,
+  avec les exécutions de base `f2-honest` et `f2-extreme`), avec les réglages, les tailles,
   les tailles par fichier, le résultat de la vérification, la décision et la raison. Les fichiers de traces bruts de chaque exécution ont été gardés en local et ne sont pas publiés.
 
 La page de rapport détaillé (graphiques, toutes les exécutions avec filtres, tableaux par fichier) est construite à partir du journal :
@@ -550,5 +570,6 @@ La page de rapport détaillé (graphiques, toutes les exécutions avec filtres, 
 node tools/build-report.mjs report.html
 ```
 
+Il affiche `wrote report.html (971716 bytes, 163 runs; scrubbed: none)`.
 Le site de démo propose cette page sous le nom `report.html` à côté de la page d'accueil (`tools/assemble-site.mjs` appelle le même script).
 `--standalone` est toujours accepté et ne fait rien.

@@ -14,6 +14,7 @@ else origin = a;
 const fails = []; const ok = (c, m) => { console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); if (!c) fails.push(m); };
 const br = await chromium.launch(); const p = await (await br.newContext()).newPage(); const errs = [];
 p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); }); p.on('pageerror', e => errs.push(e.message));
+p.on('request', r => { const u = r.url(); if (!u.startsWith('data:') && new URL(u).origin !== origin) errs.push(`cross-origin request: ${u}`); });
 const r1 = await p.goto(origin + prefix); ok(r1.status() === 200, `landing 200`);
 ok(await p.locator('a[href="report.html"]').count() === 1, 'landing links to report.html');
 const r2 = await p.goto(origin + prefix + 'report.html'); ok(r2.status() === 200, 'report.html 200');

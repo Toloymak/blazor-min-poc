@@ -28,6 +28,8 @@ function watch(page, log) {
   page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
   page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
   page.on('requestfailed', r => errors.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`));
+  // zero requests to other origins (no CDN, font or library)
+  page.on('request', r => { const u = r.url(); if (!u.startsWith('data:') && new URL(u).origin !== origin) errors.push(`cross-origin request: ${u}`); });
   page.on('response', async r => {
     const u = new URL(r.url());
     if (u.origin !== origin) return;

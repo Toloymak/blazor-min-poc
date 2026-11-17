@@ -45,6 +45,11 @@ Counter and Fetch (taken from the browser network log, not a directory listing).
 | Extreme round 1 final | 4,013,671 | 1,333,578 | 1,599,659 | 39 | 1,255,772 | pass |
 | **Honest final, round 2** (`./build.sh honest`, served from `.br`) | **4,243,612** | **1,424,673** | 1,706,941 | 43 | **1,164,677 (45.0%)** | pass |
 | **Extreme final, round 2** (`./build.sh extreme`, served from `.br`) | **3,851,361** | **1,211,018** | 1,507,342 | 8 | **1,378,332 (53.2%)** | pass |
+| Honest, demo as served, with page styles (`f3-honest-style`) | 4,244,919 | 1,425,160 | 1,707,563 | 43 | 1,164,190 (45.0%) | pass |
+| Extreme, demo as served, with page styles (`f3-extreme-style`) | 3,852,665 | 1,211,522 | 1,507,960 | 8 | 1,377,828 (53.2%) | pass |
+
+"Recipe final" (1,424,673 / 1,211,018) is the build before page styles; "demo as served" is the same build with the apps'
+hand-written page styles (+487 / +504 bytes brotli). See "Page styles" at the end of this file.
 
 Round 2 details are at the end of this file.
 
@@ -669,3 +674,27 @@ Pages gate (build machine, `/some-repo/`): both apps PASS, deep links PASS; acti
   CI builds it on the GitHub runner of the target OS.
 - Pages layout: the robots meta tag costs per page (raw / brotli / gzip): apps' `index.html` +48 / +7..+21 / +29..+30, landing +48 / +10 / +21,
   `report.html` +48 / +70 / +20. It is added only when the Pages site is assembled; the measured artifacts do not have it.
+
+---
+
+# Page styles (demo as served)
+
+The two apps, the landing page and the report page got hand-written CSS: system fonts, one accent colour (Blazor purple),
+light and dark from the system setting. No library, web font, icon font, image or other origin.
+
+- Apps: the same CSS text (1,269 bytes raw) in both, as one inline `<style>` in `index.html`, element selectors only;
+  `index.html` also gets a `data-app` attribute for the app name in the header. No Razor or C# change.
+  Inline costs less than a separate file: Honest +487 vs +517, Extreme +504 vs +528 brotli bytes (`tools/css-cost.mjs`).
+- New runs `f3-honest-style` and `f3-extreme-style` (base: the recipe finals `f2-*`):
+
+| | raw | brotli | gzip -9 | vs recipe final (brotli) |
+|---|---:|---:|---:|---:|
+| Honest recipe final (`f2-honest`) | 4,243,612 | 1,424,673 | 1,706,941 | — |
+| Honest demo as served (`f3-honest-style`) | 4,244,919 | 1,425,160 | 1,707,563 | +487 |
+| Extreme recipe final (`f2-extreme`) | 3,851,361 | 1,211,018 | 1,507,342 | — |
+| Extreme demo as served (`f3-extreme-style`) | 3,852,665 | 1,211,522 | 1,507,960 | +504 |
+
+- Served from `.br`: transfer = sum of the `.br` files for both. Extreme stress page 15/15. Every request same-origin.
+- Host CSP: inline `<style>` blocks are allowed by their sha256 hash, like the inline scripts. The report page keeps
+  `'unsafe-inline'` for styles because its charts use `style=""` attributes.
+
