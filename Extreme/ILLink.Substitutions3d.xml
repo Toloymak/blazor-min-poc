@@ -1,0 +1,6 @@
+<linker>
+  <!-- AppContext.OnProcessExit: a browser app never runs process-exit handlers; it roots IDisposable.Dispose of everything -->
+  <assembly fullname="System.Private.CoreLib">
+    <type fullname="System.AppContext"><method signature="System.Void OnProcessExit()" body="stub" /></type>
+  </assembly>
+</linker>

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Extreme</title>
+<base href="/">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<div id="app">Loading...</div>
+<script>getData=u=>fetch(u).then(r=>r.json()).then(d=>[d.message,...d.items].join("\n"))</script>
+<script src="_framework/blazor.webassembly.js"></script>
+</body>
+</html>

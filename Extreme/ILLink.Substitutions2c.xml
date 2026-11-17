@@ -1,0 +1,9 @@
+<linker>
+  <!-- Extreme, second set: code paths this app never reaches. -->
+  <assembly fullname="System.Private.Uri">
+    <type fullname="System.DomainNameHelper">
+      <!-- IDN (unicode host names) conversion; same-origin ASCII host only -->
+      <method signature="System.Boolean TryGetUnicodeEquivalent(System.String,System.Text.ValueStringBuilder&amp;)" body="stub" />
+    </type>
+  </assembly>
+</linker>

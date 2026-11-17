@@ -1,0 +1,8 @@
+<linker>
+  <!-- [PersistentState] key hashing (SHA-256): the app has no persistent component state -->
+  <assembly fullname="Microsoft.AspNetCore.Components">
+    <type fullname="Microsoft.AspNetCore.Components.Infrastructure.PersistentStateValueProviderKeyResolver">
+      <method signature="System.Byte[] KeyFactory(System.ValueTuple`3&lt;System.String,System.String,System.String&gt;)" body="stub" />
+    </type>
+  </assembly>
+</linker>

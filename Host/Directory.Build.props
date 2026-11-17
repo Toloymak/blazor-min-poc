@@ -1,0 +1,1 @@
+<Project><!-- Host is a plain server app: not affected by the repo Directory.Build.props (wasm size levers) --></Project>

@@ -1,0 +1,2 @@
+export FETCH_PATH=fetch DATA_FILE=data.json DATA_TEXT="Hello from data.json"
+Honest h01-trimfull -p:TrimMode=full

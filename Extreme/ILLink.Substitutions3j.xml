@@ -1,0 +1,9 @@
+<linker>
+  <!-- JsonNode converter: interop never (de)serializes JsonNode values -->
+  <assembly fullname="System.Text.Json">
+    <type fullname="System.Text.Json.Serialization.Converters.JsonNodeConverterFactory">
+      <method signature="System.Boolean CanConvert(System.Type)" body="stub" value="false" />
+      <method signature="System.Text.Json.Serialization.JsonConverter CreateConverter(System.Type,System.Text.Json.JsonSerializerOptions)" body="stub" />
+    </type>
+  </assembly>
+</linker>

@@ -1,0 +1,9 @@
+<linker>
+  <!-- Extreme, second set: code paths this app never reaches. -->
+  <assembly fullname="System.Text.Json">
+    <type fullname="System.Text.Json.Serialization.Converters.EnumConverter`1">
+      <!-- enum-from-string parsing (pulls in Regex); the app never sends enums as strings -->
+      <method signature="System.Boolean TryParseEnumFromString(System.Text.Json.Utf8JsonReader&amp;,T&amp;)" body="stub" />
+    </type>
+  </assembly>
+</linker>

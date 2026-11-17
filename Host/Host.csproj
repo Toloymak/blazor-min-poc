@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- Static host for the two demo sites with precompressed .br/.gz files (Azure App Service, Windows or Linux).
+       HostMode (MSBuild property) picks the build: fdd (framework-dependent, default), aot (Native AOT), sc (self-contained, trimmed). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <!-- low idle footprint -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredPGO>false</TieredPGO>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>none</DebugType>
+    <!-- no web.config from the SDK: we ship our own (Host/web.config) for Windows App Service -->
+    <IsTransformWebConfigDisabled>true</IsTransformWebConfigDisabled>
+    <HostMode Condition="'$(HostMode)' == ''">fdd</HostMode>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(HostMode)' == 'aot'">
+    <PublishAot>true</PublishAot>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StackTraceSupport>false</StackTraceSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <UseNativeHttpHandler>true</UseNativeHttpHandler>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(HostMode)' == 'sc'">
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <EventSourceSupport>false</EventSourceSupport>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- small GC heap: conserve memory, 1 MB regions (recommended for very small heaps), hard limit 64 MB -->
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="9" />
+    <RuntimeHostConfigurationOption Include="System.GC.RegionSize" Value="1048576" />
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="67108864" />
+    <Content Update="web.config" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

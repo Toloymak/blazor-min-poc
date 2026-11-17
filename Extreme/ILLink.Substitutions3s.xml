@@ -1,0 +1,6 @@
+<linker>
+  <!-- Environment.StackTrace: StackTraceSupport=false already; its formatting path roots ISpanFormattable.TryFormat of every type -->
+  <assembly fullname="System.Private.CoreLib">
+    <type fullname="System.Environment"><method signature="System.String get_StackTrace()" body="stub" /></type>
+  </assembly>
+</linker>

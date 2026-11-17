@@ -1,0 +1,9 @@
+BUILD_SH=honest SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group Honest r2-h-bundle2
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group WASMOPT_FLAGS=-Oz@--converge@-tnh@--enable-bulk-memory@--enable-bulk-memory-opt@--enable-exception-handling@--enable-nontrapping-float-to-int@--enable-sign-ext@--enable-mutable-globals@--enable-reference-types@--enable-multivalue Extreme r2-n-tnh
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group WASMOPT_FLAGS=-Oz@--converge@--gufa@-Oz@--enable-bulk-memory@--enable-bulk-memory-opt@--enable-exception-handling@--enable-nontrapping-float-to-int@--enable-sign-ext@--enable-mutable-globals@--enable-reference-types@--enable-multivalue Extreme r2-n-gufa
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group WASMOPT_FLAGS=-Oz@--converge@--strip-producers@--strip-target-features@--enable-bulk-memory@--enable-bulk-memory-opt@--enable-exception-handling@--enable-nontrapping-float-to-int@--enable-sign-ext@--enable-mutable-globals@--enable-reference-types@--enable-multivalue Extreme r2-n-strip
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group WASMOPT_FLAGS=-Oz@--converge@-tnh@--gufa@-Oz@--converge@--enable-bulk-memory@--enable-bulk-memory-opt@--enable-exception-handling@--enable-nontrapping-float-to-int@--enable-sign-ext@--enable-mutable-globals@--enable-reference-types@--enable-multivalue Extreme r2-n-tnh-gufa
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group JITERP_OFF=1 Extreme r2-n-jiterpoff
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group JITERP_OFF=1 METADCE_DROP=^mono_jiterp_ Extreme r2-n-jiterp-dce
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group METADCE_DROP=^(mono_wasm_send_dbg_command|mono_wasm_send_dbg_command_with_parms|mono_wasm_exec_regression)$ Extreme r2-n-dbg-dce
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group BUILD_PROPS=-p:_TrimmerDumpDependencies=true Extreme r2-dump

@@ -1,0 +1,14 @@
+@page "/fetch"
+@inject HttpClient Http
+<h1>Fetch</h1>
+@if (data is null) { <p>Loading...</p> }
+else
+{
+    <p>@data.Message</p>
+    <ul>@foreach (var item in data.Items) { <li>@item</li> }</ul>
+}
+@code {
+    Data? data;
+    protected override async Task OnInitializedAsync() =>
+        data = await Http.GetFromJsonAsync("data.json", AppJsonContext.Default.Data);
+}

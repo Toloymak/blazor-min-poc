@@ -1,0 +1,9 @@
+BUILD_SH=extreme SERVE_ENCODED=br Extreme r2-base-br
+BUILD_SH=extreme SERVE_ENCODED=gzip Extreme r2-base-gz
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group Extreme r2-b-group
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=alpha Extreme r2-b-alpha
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=size Extreme r2-b-size
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=boot Extreme r2-b-boot
+BUILD_SH=extreme SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group BUNDLE_WASM=1 Extreme r2-b-group-wasm
+BUILD_SH=honest SERVE_ENCODED=br Honest r2-h-base-br
+BUILD_SH=honest SERVE_ENCODED=br BUNDLE=1 BUNDLE_ORDER=group Honest r2-h-bundle

@@ -1,0 +1,16 @@
+<linker>
+  <!-- Extreme only: stub framework methods this app never needs, so ILLink drops the code behind them. -->
+  <assembly fullname="Microsoft.Extensions.Configuration.EnvironmentVariables">
+    <type fullname="Microsoft.Extensions.Configuration.EnvironmentVariablesExtensions">
+      <!-- CreateDefault() adds env vars to IConfiguration; a browser app has none. -->
+      <method signature="Microsoft.Extensions.Configuration.IConfigurationBuilder AddEnvironmentVariables(Microsoft.Extensions.Configuration.IConfigurationBuilder)" body="stub" />
+    </type>
+  </assembly>
+  <assembly fullname="Microsoft.AspNetCore.Components.WebAssembly">
+    <type fullname="Microsoft.AspNetCore.Components.WebAssembly.Hosting.WebAssemblyCultureProvider">
+      <!-- InvariantGlobalization: no culture switching, no satellite assemblies to load. -->
+      <method signature="System.Void ThrowIfCultureChangeIsUnsupported()" body="stub" />
+      <method signature="System.Threading.Tasks.ValueTask LoadCurrentCultureResourcesAsync()" body="stub" />
+    </type>
+  </assembly>
+</linker>

@@ -1,0 +1,9 @@
+<linker>
+  <!-- runtime callbacks for satellite / fallback assembly loading: no satellite assemblies, every assembly is in the boot config -->
+  <assembly fullname="System.Private.CoreLib">
+    <type fullname="System.Runtime.Loader.AssemblyLoadContext">
+      <method signature="System.Reflection.RuntimeAssembly MonoResolveUsingResolveSatelliteAssembly(System.IntPtr,System.String)" body="stub" />
+      <method signature="System.Reflection.RuntimeAssembly MonoResolveUsingLoad(System.IntPtr,System.String)" body="stub" />
+    </type>
+  </assembly>
+</linker>

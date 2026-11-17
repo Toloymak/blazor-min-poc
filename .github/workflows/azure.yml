@@ -1,0 +1,147 @@
+name: Blazor WebAssembly minification demo - Azure App Service
+
+# Manual only: it needs the secret and variables below, which the owner sets once.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-webapp
+  cancel-in-progress: false
+
+jobs:
+  config:
+    runs-on: ubuntu-24.04
+    outputs:
+      os: ${{ steps.c.outputs.os }}
+      hostmode: ${{ steps.c.outputs.hostmode }}
+    steps:
+      - id: c
+        name: Check secret and variables
+        env:
+          NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+          OS: ${{ vars.AZURE_WEBAPP_OS }}
+          HOSTMODE: ${{ vars.AZURE_WEBAPP_HOST }}
+        run: |
+          fail=0
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Run this workflow from the main branch."; fail=1; }
+          [ -n "$NAME" ] || { echo "::error::Repository variable AZURE_WEBAPP_NAME is missing (Settings > Secrets and variables > Actions > Variables)."; fail=1; }
+          case "$OS" in linux|windows) ;; *) echo "::error::Repository variable AZURE_WEBAPP_OS must be 'linux' or 'windows' (now: '$OS')."; fail=1 ;; esac
+          # optional AZURE_WEBAPP_HOST: 'aspnetcore' (default, the Host app) or 'iis' (Windows only, no app process; NOT TESTED)
+          case "${HOSTMODE:-aspnetcore}" in aspnetcore) ;; iis) [ "$OS" = windows ] || { echo "::error::AZURE_WEBAPP_HOST=iis needs AZURE_WEBAPP_OS=windows."; fail=1; } ;; *) echo "::error::AZURE_WEBAPP_HOST must be 'aspnetcore' or 'iis'."; fail=1 ;; esac
+          [ $fail = 0 ] || exit 1
+          echo "os=$OS" >> "$GITHUB_OUTPUT"
+          echo "hostmode=${HOSTMODE:-aspnetcore}" >> "$GITHUB_OUTPUT"
+
+  site:
+    needs: config
+    runs-on: ubuntu-24.04
+    env:
+      DOTNET_INSTALL_DIR: ${{ github.workspace }}/../dotnet
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - run: dotnet workload install wasm-tools
+      - run: sudo apt-get update && sudo apt-get install -y libatomic1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - working-directory: tools
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium-headless-shell
+      - name: Build both variants (same recipe as Pages and the measured final state)
+        run: |
+          ./build.sh honest
+          ./build.sh extreme
+      - name: Measure (numbers for the landing page)
+        run: |
+          node tools/check.mjs artifacts/honest/wwwroot artifacts/honest.netlog.json
+          node tools/measure.mjs artifacts/honest/wwwroot artifacts/honest.netlog.json honest
+          PORT=5081 node tools/check.mjs artifacts/extreme/wwwroot artifacts/extreme.netlog.json
+          node tools/measure.mjs artifacts/extreme/wwwroot artifacts/extreme.netlog.json extreme
+      - name: Assemble site for the App Service host (base path /, .br/.gz kept)
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: node tools/assemble-site.mjs / site artifacts/honest.netlog.sizes.json artifacts/extreme.netlog.sizes.json --host appservice --repo "$REPO_URL"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: site
+          path: site
+          include-hidden-files: true
+
+  host:
+    needs: [config, site]
+    if: github.ref == 'refs/heads/main'
+    # the publish profile is an environment secret of "azure-demo" (deployment branch rule: main)
+    environment: azure-demo
+    # Native AOT has to be compiled on the target OS.
+    runs-on: ${{ needs.config.outputs.os == 'windows' && 'windows-2025' || 'ubuntu-24.04' }}
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - name: Publish host (Native AOT, self-contained single executable)
+        if: needs.config.outputs.hostmode == 'aspnetcore'
+        shell: bash
+        env:
+          RID: ${{ needs.config.outputs.os == 'windows' && 'win-x64' || 'linux-x64' }}
+        run: |
+          rid="$RID"
+          dotnet publish Host -c Release -r $rid -p:HostMode=aot -o pub
+          rm -f pub/*.pdb pub/*.dbg
+      - name: Windows - web.config for the ASP.NET Core Module (out-of-process, IIS compression off)
+        if: needs.config.outputs.os == 'windows' && needs.config.outputs.hostmode == 'aspnetcore'
+        shell: bash
+        run: sed -e 's|PROCESS_PATH|.\\Host.exe|' -e 's|ARGUMENTS||' Host/web.config > pub/web.config
+      - name: Windows without app process - IIS rewrite web.config (NOT TESTED)
+        if: needs.config.outputs.hostmode == 'iis'
+        shell: bash
+        run: mkdir -p pub && cp Host/iis-static/web.config pub/web.config
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: site
+          path: ${{ needs.config.outputs.hostmode == 'iis' && 'pub' || 'pub/wwwroot' }}
+      - name: Package listing
+        shell: bash
+        run: ls -la pub; ls pub/wwwroot 2>/dev/null || true
+      - name: Check the environment secret
+        shell: bash
+        env:
+          PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        run: '[ -n "$PROFILE" ] || { echo "::error::Secret AZURE_WEBAPP_PUBLISH_PROFILE is missing in environment azure-demo (Settings > Environments > azure-demo > Environment secrets)."; exit 1; }'
+      - name: Deploy
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: pub
+      - name: Smoke test - brotli bytes are served as built
+        shell: bash
+        env:
+          NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+        run: |
+          base="https://$NAME.azurewebsites.net"
+          for i in $(seq 1 30); do code=$(curl -s -o /dev/null -w '%{http_code}' "$base/robots.txt"); [ "$code" = 200 ] && break; sleep 10; done
+          fail=0
+          check() { # url-path local-file
+            h=$(curl -s -o /dev/null -D - -H 'Accept-Encoding: br, gzip' "$base$1" | tr -d '\r')
+            st=$(echo "$h" | head -1 | awk '{print $2}'); enc=$(echo "$h" | grep -i '^content-encoding:' | awk '{print $2}'); len=$(echo "$h" | grep -i '^content-length:' | awk '{print $2}')
+            want=$(stat -c %s "$2.br")
+            echo "$1 status=$st content-encoding=$enc content-length=$len expected=$want"
+            [ "$st" = 200 ] && [ "$enc" = br ] && [ "$len" = "$want" ] || { echo "::error::$1 is not served as the built .br file"; fail=1; }
+          }
+          s=pub/wwwroot; [ -d "$s/extreme" ] || s=pub
+          wasm=$(ls $s/extreme/_framework | grep -E '^dotnet\.native\..*\.wasm$')
+          check "/extreme/_framework/$wasm" "$s/extreme/_framework/$wasm"
+          check "/extreme/_framework/b.bin" "$s/extreme/_framework/b.bin"
+          [ "$(curl -s -o /dev/null -w '%{http_code}' "$base/extreme/counter")" = 200 ] || { echo "::error::deep link /extreme/counter is not 200"; fail=1; }
+          exit $fail

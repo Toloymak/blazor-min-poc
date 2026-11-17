@@ -1,0 +1,14 @@
+@* HTTP via the browser's fetch() through IJSRuntime: no HttpClient / System.Net.Http, no JSON in .NET. *@
+@inject IJSRuntime JS
+<h1>Fetch</h1>
+@if (lines is null) { <p>Loading...</p> }
+else
+{
+    <p>@lines[0]</p>
+    <ul>@foreach (var item in lines[1..]) { <li>@item</li> }</ul>
+}
+@code {
+    string[]? lines;
+    protected override async Task OnInitializedAsync() =>
+        lines = (await JS.InvokeAsync<string>("getData", "data.json")).Split('\n');
+}

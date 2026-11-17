@@ -1,0 +1,15 @@
+<linker>
+  <!-- Extreme, second set: code paths this app never reaches. -->
+  <assembly fullname="System.Console">
+    <type fullname="System.Console">
+      <!-- only reached when a root component update fails (error text to stderr) -->
+      <method signature="System.IO.TextWriter get_Error()" body="stub" />
+    </type>
+  </assembly>
+  <assembly fullname="Microsoft.Extensions.Configuration.Json">
+    <type fullname="Microsoft.Extensions.Configuration.Json.JsonStreamConfigurationSource">
+      <!-- only used when wwwroot/appsettings.json exists; this app has none -->
+      <method signature="Microsoft.Extensions.Configuration.IConfigurationProvider Build(Microsoft.Extensions.Configuration.IConfigurationBuilder)" body="stub" />
+    </type>
+  </assembly>
+</linker>

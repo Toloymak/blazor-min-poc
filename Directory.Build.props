@@ -1,0 +1,71 @@
+<Project>
+  <!-- Shared settings for Honest and Extreme. -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- builds from different checkout paths give the same bytes -->
+    <PathMap>$(MSBuildThisFileDirectory)=/src/</PathMap>
+    <!-- SizeProfile=final (default) = the kept size levers below; experiments pass -p:SizeProfile=none and add levers by hand. -->
+    <SizeProfile Condition="'$(SizeProfile)' == ''">final</SizeProfile>
+  </PropertyGroup>
+
+  <!-- Kept levers, measured one by one in RESULTS.md / results/experiments.jsonl. -->
+  <PropertyGroup Condition="'$(SizeProfile)' == 'final'">
+    <!-- trimming -->
+    <TrimMode>full</TrimMode>
+    <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- feature switches -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <InvariantTimezone>true</InvariantTimezone>
+    <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <MetricsSupport>false</MetricsSupport>
+    <StackTraceSupport>false</StackTraceSupport>
+    <DynamicCodeSupport>false</DynamicCodeSupport>
+    <!-- native relink (needs the wasm-tools workload) -->
+    <WasmEnableSIMD>false</WasmEnableSIMD>
+    <WasmEnableExceptionHandling>false</WasmEnableExceptionHandling>
+    <EmccLinkOptimizationFlag>-Oz</EmccLinkOptimizationFlag>
+    <EmccExtraLDFlags>-sMALLOC=emmalloc</EmccExtraLDFlags>
+    <!-- publish output -->
+    <WasmEnableWebcil>false</WasmEnableWebcil>
+    <WasmFingerprintDotnetJs>false</WasmFingerprintDotnetJs>
+    <BlazorFingerprintBlazorJs>false</BlazorFingerprintBlazorJs>
+    <!-- Bit.Minifier (renames/strips metadata after ILLink) -->
+    <UseBitMinifier>true</UseBitMinifier>
+    <BitMinifierVersion>11.0.0-pre-20</BitMinifierVersion>
+    <BitMinifyAggressive>true</BitMinifyAggressive>
+  </PropertyGroup>
+
+  <!-- Feature switches found in the framework's [FeatureSwitchDefinition] / ILLink.Substitutions.xml that have no MSBuild property (round 2). -->
+  <ItemGroup Condition="'$(SwDIDynamic)' == 'true'">
+    <RuntimeHostConfigurationOption Include="Microsoft.Extensions.DependencyInjection.DisableDynamicEngine" Value="true" Trim="true" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(SwCom)' == 'true'">
+    <RuntimeHostConfigurationOption Include="System.Runtime.InteropServices.BuiltInComInterop.IsSupported" Value="false" Trim="true" />
+    <RuntimeHostConfigurationOption Include="System.Runtime.InteropServices.Marshalling.EnableGeneratedComInterfaceComImportInterop" Value="false" Trim="true" />
+    <RuntimeHostConfigurationOption Include="System.Runtime.InteropServices.EnableConsumingManagedCodeFromNativeHosting" Value="false" Trim="true" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(SwLinqExpr)' == 'true'">
+    <RuntimeHostConfigurationOption Include="System.Linq.Expressions.CanEmitObjectArrayDelegate" Value="false" Trim="true" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(SwCultures)' == 'true'">
+    <RuntimeHostConfigurationOption Include="System.Globalization.PredefinedCulturesOnly" Value="true" Trim="true" />
+  </ItemGroup>
+
+  <!-- NativeNames=true: keep the wasm name section through the link (tools/wasmstub.mjs selects functions by name);
+       our wasm-opt then strips it. The SDK post-link wasm-opt pass would drop the names, so it is off. -->
+  <PropertyGroup Condition="'$(NativeNames)' == 'true'">
+    <WasmNativeStrip>false</WasmNativeStrip>
+    <WasmRunWasmOpt>false</WasmRunWasmOpt>
+    <EmccExtraLDFlags>$(EmccExtraLDFlags) --profiling-funcs</EmccExtraLDFlags>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(UseBitMinifier)' == 'true'">
+    <PackageReference Include="Bit.Minifier" Version="$(BitMinifierVersion)" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

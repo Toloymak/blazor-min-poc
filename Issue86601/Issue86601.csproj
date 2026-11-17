@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+    <StaticWebAssetSpaFallbackEnabled>true</StaticWebAssetSpaFallbackEnabled>
+    <!-- issue dotnet/runtime#86601 recipe. BlazorWebAssemblyPreserveCollationData is not read by the .NET 11 SDK (0 hits in targets). -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+    <BlazorWebAssemblyPreserveCollationData>false</BlazorWebAssemblyPreserveCollationData>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="11.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Gateway" Version="11.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

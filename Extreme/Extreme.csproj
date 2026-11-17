@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+  <PropertyGroup>
+    <RootNamespace>Extreme</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="11.0.0" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(SizeProfile)' == 'final'">
+    <ExtremeSubst>true</ExtremeSubst>
+    <ExtremeSubst2>ac</ExtremeSubst2>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ExtremeSubst)' == 'true'">
+    <!-- ILLink method-body substitutions (see ILLink.Substitutions.xml). -->
+    <_ExtraTrimmerArgs>$(_ExtraTrimmerArgs) --substitutions "$(MSBuildProjectDirectory)/ILLink.Substitutions.xml"</_ExtraTrimmerArgs>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ExtremeSubst2)' != ''">
+    <!-- ExtremeSubst2=a;b;c picks ILLink.Substitutions2<x>.xml files -->
+    <_ExtraTrimmerArgs Condition="$(ExtremeSubst2.Contains('a'))">$(_ExtraTrimmerArgs) --substitutions "$(MSBuildProjectDirectory)/ILLink.Substitutions2a.xml"</_ExtraTrimmerArgs>
+    <_ExtraTrimmerArgs Condition="$(ExtremeSubst2.Contains('b'))">$(_ExtraTrimmerArgs) --substitutions "$(MSBuildProjectDirectory)/ILLink.Substitutions2b.xml"</_ExtraTrimmerArgs>
+    <_ExtraTrimmerArgs Condition="$(ExtremeSubst2.Contains('c'))">$(_ExtraTrimmerArgs) --substitutions "$(MSBuildProjectDirectory)/ILLink.Substitutions2c.xml"</_ExtraTrimmerArgs>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ExtremeSubst3)' != ''">
+    <!-- round 2: ExtremeSubst3=dslpj picks ILLink.Substitutions3<x>.xml files -->
+    <_ExtraTrimmerArgs Condition="$(ExtremeSubst3.Contains('d'))">$(_ExtraTrimmerArgs) --substitutions "$(MSBuildProjectDirectory)/ILLink.Substitutions3d.xml"</_ExtraTrimmerArgs>
+    <_ExtraTrimmerArgs Condition="$(ExtremeSubst3.Contains('s'))">$(_ExtraTrimmerArgs) --substitutions "$(MSBuildProjectDirectory)/ILLink.Substitutions3s.xml"</_ExtraTrimmerArgs>
+    <_ExtraTrimmerArgs Condition="$(ExtremeSubst3.Contains('l'))">$(_ExtraTrimmerArgs) --substitutions "$(MSBuildProjectDirectory)/ILLink.Substitutions3l.xml"</_ExtraTrimmerArgs>
+    <_ExtraTrimmerArgs Condition="$(ExtremeSubst3.Contains('p'))">$(_ExtraTrimmerArgs) --substitutions "$(MSBuildProjectDirectory)/ILLink.Substitutions3p.xml"</_ExtraTrimmerArgs>
+    <_ExtraTrimmerArgs Condition="$(ExtremeSubst3.Contains('j'))">$(_ExtraTrimmerArgs) --substitutions "$(MSBuildProjectDirectory)/ILLink.Substitutions3j.xml"</_ExtraTrimmerArgs>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ExtremeIgnoreDescriptors)' == 'true'">
+    <_ExtraTrimmerArgs>$(_ExtraTrimmerArgs) --ignore-descriptors true</_ExtraTrimmerArgs>
+  </PropertyGroup>
+</Project>

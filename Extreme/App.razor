@@ -1,0 +1,42 @@
+@* Hand-written router: no Router/RouteView/route table, no reflection over [Route] attributes.
+   Paths are taken relative to <base href>, so the app works under any sub-path. *@
+@implements IDisposable
+@inject NavigationManager Nav
+@inject Microsoft.AspNetCore.Components.Routing.INavigationInterception Interception
+<nav><a href="">Home</a> | <a href="counter">Counter</a> | <a href="fetch">Fetch</a></nav>
+<main>
+@switch (path)
+{
+    case "": <Home /> break;
+    case "counter": <Counter /> break;
+    case "fetch": <Fetch /> break;
+    default: <p>Not found.</p> break;
+}
+</main>
+@code {
+    string path = "";
+
+    protected override void OnInitialized()
+    {
+        path = Route(Nav.Uri);
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        firstRender ? Interception.EnableNavigationInterceptionAsync() : Task.CompletedTask;
+
+    void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        path = Route(e.Location);
+        StateHasChanged();
+    }
+
+    string Route(string uri)
+    {
+        var p = Nav.ToBaseRelativePath(uri);
+        var cut = p.IndexOfAny(['?', '#']);
+        return (cut >= 0 ? p[..cut] : p).TrimEnd('/');
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}
