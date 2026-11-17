@@ -1,4 +1,4 @@
-[English version](README.md)
+[English](README.md) | **Русский**
 
 # Минификация Blazor WebAssembly на .NET 11
 
